@@ -1,0 +1,4 @@
+venv/
+raw_data/
+*.SAFE
+.ipynb_checkpoints/
