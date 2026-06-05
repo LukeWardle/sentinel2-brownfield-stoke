@@ -6,7 +6,7 @@
 
 ## 1. Requirements
 
-This system is for the Stoke-on-Trent city council planning authority to help identify potential brownfield sites for further exploration. The system takes in raw data from the Copernicus Data Space Ecosystem, the satellite Sentinel-2 L2A carries a Multispectral Instrument (MSI) with 13 spectral bands. The data files input into the system are  Sentinel-2 L2A SAFE folder containing JP2 band files at 10m, 20m and 60m resolution. The bands used to investigate potential brownfield sites are bands 02, 03, 04, 05, 06, 07, 08, 8A, 11 and 12, these bands will be processed at 20m, the 10m bands will be down sampled to 20m. The system uses PCA spectral analysis to identify brownfield spectral signatures and outputs a report for the user. The report uses a false colour map and a results report to highlight candidate brownfield sites.  The scope of the system is for candidate identification purposes and will need follow up investigation. Version 2 looks to expand the system for automatic Copernicus API downloads.
+This system is for the Stoke-on-Trent city council planning authority to help identify potential brownfield sites for further exploration. The system takes in raw data from the Copernicus Data Space Ecosystem, the satellite Sentinel-2 L2A carries a Multispectral Instrument (MSI) with 13 spectral bands. The data files input into the system are  Sentinel-2 L2A SAFE folder containing JP2 band files at 10m, 20m and 60m resolution. The bands used to investigate potential brownfield sites are bands 02, 03, 04, 05, 06, 07, 08, 8A, 11 and 12, these bands will be processed at 20m, the 10m bands will be down sampled to 20m. The system uses PCA spectral analysis to identify brownfield spectral signatures and outputs a report for the user. The report uses a false colour map and a results report to highlight candidate brownfield sites.  The scope of the system is for candidate identification purposes and will need follow up investigation. Version 2 looks to expand the system with geographic validation, Bare Soil Index preprocessing and change detection.
 
 **Version 1 Reproducibility Constraint:**
 Version 1 is designed to produce reproducible results using a single specific Sentinel-2 image:
@@ -42,10 +42,22 @@ sentinel2-brownfield-stoke/
 │   └── main.py          — Pipeline orchestration
 ├── tests/
 ├── notebooks/
+│   └── 01_data_inspection.ipynb
 ├── data/                — Reference datasets committed to GitHub
-│     └── brownfield_register.csv
+│   ├── README.md
+│   ├── brownfield_register_2019.csv
+│   ├── brownfield_register_2020.csv
+│   ├── brownfield_register_2021.csv
+│   ├── brownfield_register_2022.xlsx
+│   ├── brownfield_register_2023.csv
+│   ├── brownfield_register_2024.csv
+│   ├── contaminated_land_register.pdf
+│   ├── contaminated_land_special_sites.csv
+│   └── uk_local_authority_boundaries.geojson
 ├── outputs/
-├── raw_data/
+├── raw_data/            — Sentinel-2 satellite imagery — not committed to GitHub
+│   ├── README.md
+│   └── S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE/  — excluded from GitHub, see README.md to download
 ├── DESIGN.md
 ├── EDA.md
 ├── README.md
@@ -119,6 +131,8 @@ Seasonal variation presents a second risk. The system was developed and tested u
 
 The system may also experience spectral confusion between land cover types. Two different surfaces with similar spectral signatures in the selected bands may cluster together in the PCA and appear as the same colour on the false colour map. For example brownfield bare soil and agricultural bare soil may be indistinguishable. This is a fundamental limitation of unsupervised PCA — the system identifies spectral variation but cannot label land cover types with certainty. All outputs should be treated as candidate sites requiring physical verification.
 
+Brownfield sites in Stoke-on-Trent may be contaminated with heavy metals, coal tar or asbestos from former pottery, mining and steelworks industries. The system cannot distinguish between clean brownfield and contaminated brownfield — both produce similar spectral signatures. Candidate sites identified by this tool must be cross-referenced against the Environment Agency contaminated land register before any planning decision is made.
+
 Missing or corrupted band files present a technical risk. If the downloaded SAFE folder is missing any of the 10 required bands the pipeline will raise a ValueError from validate_bands before processing begins. Users should ensure the complete SAFE folder has been downloaded and extracted correctly.
 
 Finally the system was developed and validated against a single image. Results on different dates, different atmospheric conditions, or different seasonal contexts have not been tested. The 95% variance threshold and band selection were chosen based on this single image and may require adjustment for other dates or conditions.
@@ -136,6 +150,8 @@ The false colour map is considered useful when it visually distinguishes at leas
 The results report is considered complete when it contains the number of principal components retained, the variance explained by each component, and a plain English summary of the findings suitable for a non-technical planning official.
 
 All pipeline runs must complete within a reasonable time — target under 5 minutes on a standard laptop for the full Stoke-on-Trent dataset.
+
+Candidate sites identified by the false colour map should be cross-referenced against data/brownfield_register.csv to identify overlap with known registered sites and highlight potential unregistered brownfield land.
 
 ## 6. Future Versions
 
