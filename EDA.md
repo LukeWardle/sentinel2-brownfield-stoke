@@ -19,9 +19,9 @@
 |---|---|---|---|---|---|
 | B01 | Aerosol | 443nm | 20m | For aerosol detection | Not selected — measures atmospheric aerosol not land surface |
 | B01 | Aerosol | 443nm | 60m | For aerosol detection | Not selected — measures atmospheric aerosol not land surface |
-| B02 | Blue | 490nm | 10m | Soil and vegetation discrimination | Urban fabric identification | Selected — urban fabric and soil discrimination |
-| B02 | Blue | 490nm | 20m | Soil and vegetation discrimination | Urban fabric identification | Selected — urban fabric and soil discrimination |
-| B02 | Blue | 490nm | 60m | Soil and vegetation discrimination | Urban fabric identification | Selected — urban fabric and soil discrimination |
+| B02 | Blue | 490nm | 10m | Soil and vegetation discrimination | Selected — urban fabric and soil discrimination |
+| B02 | Blue | 490nm | 20m | Soil and vegetation discrimination | Selected — urban fabric and soil discrimination |
+| B02 | Blue | 490nm | 60m | Soil and vegetation discrimination | Selected — urban fabric and soil discrimination |
 | B03 | Green | 560nm | 10m | Contrast between clear and turbid water | Not selected — water contrast not relevant to brownfield detection |
 | B03 | Green | 560nm | 20m | Contrast between clear and turbid water | Not selected — water contrast not relevant to brownfield detection |
 | B03 | Green | 560nm | 60m | Contrast between clear and turbid water | Not selected — water contrast not relevant to brownfield detection |
