@@ -6,7 +6,7 @@
 
 ## 1. Requirements
 
-This system is for the Stoke-on-Trent city council planning authority to help identify potential brownfield sites for further exploration. The system takes in raw data from the Copernicus Data Space Ecosystem, the satellite Sentinel-2 L2A carries a Multispectral Instrument (MSI) with 13 spectral bands. The data files input into the system are  Sentinel-2 L2A SAFE folder containing JP2 band files at 10m, 20m and 60m resolution. The bands used to investigate potential brownfield sites are bands 02, 03, 04, 05, 06, 07, 08, 8A, 11 and 12, these bands will be processed at 20m, the 10m bands will be down sampled to 20m. The system uses PCA spectral analysis to identify brownfield spectral signatures sites and outputs a report for the user. The report uses a false colour map and a results report to highlight candidate brownfield sites.  The scope of the system is for candidate identification purposes and will need follow up investigation. Version 2 looks to expand the system for automatic Copernicus API downloads.
+This system is for the Stoke-on-Trent city council planning authority to help identify potential brownfield sites for further exploration. The system takes in raw data from the Copernicus Data Space Ecosystem, the satellite Sentinel-2 L2A carries a Multispectral Instrument (MSI) with 13 spectral bands. The data files input into the system are  Sentinel-2 L2A SAFE folder containing JP2 band files at 10m, 20m and 60m resolution. The bands used to investigate potential brownfield sites are bands 02, 03, 04, 05, 06, 07, 08, 8A, 11 and 12, these bands will be processed at 20m, the 10m bands will be down sampled to 20m. The system uses PCA spectral analysis to identify brownfield spectral signatures and outputs a report for the user. The report uses a false colour map and a results report to highlight candidate brownfield sites.  The scope of the system is for candidate identification purposes and will need follow up investigation. Version 2 looks to expand the system for automatic Copernicus API downloads.
 
 **Version 1 Reproducibility Constraint:**
 Version 1 is designed to produce reproducible results using a single specific Sentinel-2 image:
@@ -21,7 +21,7 @@ Generalisation to other images and locations is a Version 2 objective.
 
 ## 2. Problem Formulation
 
-The system loads 10 spectral bands at 20m resolution and stacks them into a matrix where each row is a pixel and each column is a band. Before any analysis the data is centred by subtracting the mean of each band — this removes overall brightness differences between bands and ensures the covariance matrix measures variation not position. The system then computes the covariance matrix using the formula  $\Sigma = (1/n)X^TX$ , transposing the matrix onto itself creating a symmetric matrix
+The system loads 10 spectral bands at 20m resolution and stacks them into a matrix where each row is a pixel and each column is a band. Before any analysis the data is centred by subtracting the mean of each band — this removes overall brightness differences between bands and ensures the covariance matrix measures variation not position. The system then computes the covariance matrix using the formula  $\Sigma = (1/n)X^TX$ , transposing the matrix onto itself creating a symmetric matrix.
 
 The covariance matrix is then decomposed using the Spectral Theorem — $\Sigma = Q\Lambda Q^T$ — where Q contains the eigenvectors as columns and $\Lambda$ contains the eigenvalues on the diagonal. This is computed using numpy.linalg.eigh which is optimised for symmetric matrices and guarantees real eigenvalues and perpendicular eigenvectors. Each eigenvector represents a direction of spectral variation in the data and each eigenvalue represents how much variation exists in that direction.
 
@@ -42,6 +42,8 @@ sentinel2-brownfield-stoke/
 │   └── main.py          — Pipeline orchestration
 ├── tests/
 ├── notebooks/
+├── data/                — Reference datasets committed to GitHub
+│     └── brownfield_register.csv
 ├── outputs/
 ├── raw_data/
 ├── DESIGN.md
@@ -139,18 +141,26 @@ All pipeline runs must complete within a reasonable time — target under 5 minu
 
 | Version | Enhancement | Notes |
 |---|---|---|
-| v2 | Automated Copernicus API download | User provides date and location — system downloads correct Sentinel-2 tile automatically without manual intervention |
 | v2 | Geographic validation and AOI clipping | System clips any downloaded image to a fixed Stoke-on-Trent bounding box — results consistent regardless of user AOI |
+| v2 | Bare Soil Index preprocessing | Calculate BSI prior to PCA — filters obvious non-brownfield pixels, provides independent validation of PCA results. BSI threshold must be calibrated for Stoke-on-Trent soil conditions and validated against the council brownfield register |
+| v2 | Brownfield register validation | Cross-reference candidate sites against Stoke-on-Trent brownfield register coordinates — identifies overlap between PCA candidates and known registered sites, highlights potential unregistered sites |
+| v2 | Change detection | Compare two Sentinel-2 images from different dates — identifies newly appearing brownfield sites and sites that have been developed since previous analysis. Supports annual brownfield register update process |
 | v3 | Streamlit web interface | Planning officials access via browser — no command line required — upload or trigger download, receive map and report |
-| v3 | Supervised classification layer | Add Random Forest or SVM classifier trained on verified brownfield register data — moves beyond candidate identification to probabilistic classification |
+| v3 | Supervised classification using brownfield register | Train Random Forest or SVM on Stoke-on-Trent brownfield register coordinates as ground truth labels — moves from candidate identification to validated probabilistic classification |
+| v3 | Contamination filtering | Cross-reference candidate sites against Environment Agency contaminated land register — exclude known contaminated sites. Explore supervised detection of contamination spectral signatures using Sentinel-2 SWIR bands |
+| v3 | Temporal spectral training data | Extract spectral signatures from historical Sentinel-2 images of known brownfield sites before development — creates verified before/after training pairs. Improves supervised classifier accuracy by distinguishing active brownfield from developed former brownfield |
+| v4 | Multi-city expansion | Generalise pipeline to other UK cities using automated Copernicus API download — BSI thresholds and classifier retrained per city using local brownfield register data |
 
 ### Design Decisions for Future Versions
 
-- validate_bands uses dynamic shape checking — not hardcoded to 10 bands — supports different band selections in future versions
-- validate_quality cloud_threshold is configurable — default 0.10 — overridable for different use cases
-- cumulative_variance_for_k variance_threshold is configurable — default 0.95 — overridable for different conditions
-- validation.py is a separate module — new quality checks can be added without touching data.py
-- mask_nodata scl_array is optional — defaults to None — supports future versions where SCL may not be available
-- load_scl is specific to Sentinel-2 L2A — future versions supporting other satellite products will need a different masking approach
-- Output files are timestamped — prevents overwriting on multiple runs
-- Geographic validation removed from Version 1 — validate_aoi will be implemented in Version 2 using verified ONS boundary data
+- validate_bands uses dynamic shape checking — not hardcoded to 10 bands — supports different band selections in future versions and multi-city expansion
+- validate_quality cloud_threshold is configurable — default 0.10 — overridable for different seasonal conditions and geographic regions
+- cumulative_variance_for_k variance_threshold is configurable — default 0.95 — may require adjustment for different cities or seasonal imagery
+- validation.py is a separate module — new quality checks can be added without touching data.py — designed for extensibility
+- mask_nodata scl_array is optional — defaults to None — supports future versions where SCL may not be available or where a different masking approach is used
+- load_scl is specific to Sentinel-2 L2A — future versions supporting other satellite products or other cities will require a different masking approach
+- Output files are timestamped — prevents overwriting on multiple runs — essential for change detection in Version 2 where multiple dated images will be compared
+- Geographic validation removed from Version 1 — validate_aoi will be implemented in Version 2 using verified ONS boundary data for Stoke-on-Trent
+- BSI threshold calibration deferred to Version 2 — requires validation against Stoke-on-Trent specific soil conditions and council brownfield register
+- Temporal analysis deferred to Version 3 — requires historical Sentinel-2 imagery pipeline and before/after training pair extraction
+- Multi-city expansion deferred to Version 4 — requires per-city BSI calibration, classifier retraining and automated API download
