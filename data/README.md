@@ -41,6 +41,7 @@ Licence: Environment Agency copyright and database right 2016
 Source: ONS Open Geography Portal
 URL: https://geoportal.statistics.gov.uk/datasets/ons::local-authority-districts-may-2024-boundaries-uk-bfe-2/about
 Licence: Open Government Licence
+> **Note:** uk_local_authority_boundaries.geojson is excluded from GitHub — 358MB exceeds the 100MB limit. Download directly from the ONS Open Geography Portal URL above and place in the data/ folder.
 
 | File | Format | Purpose |
 |---|---|---|
