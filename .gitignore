@@ -2,4 +2,4 @@ venv/
 raw_data/*
 !raw_data/README.md
 *.SAFE
-.ipynb_checkpoints/
+.ipynb_checkpoints/data/uk_local_authority_boundaries.geojson
