@@ -41,6 +41,13 @@ sentinel2-brownfield-stoke/
 │   ├── visualise.py     — False colour map and results report
 │   └── main.py          — Pipeline orchestration
 ├── tests/
+│   ├── __init__.py
+│   ├── test_data.py
+│   ├── test_validation.py
+│   ├── test_preprocess.py
+│   ├── test_pca.py
+│   ├── test_visualise.py
+│   └── test_main.py
 ├── notebooks/
 │   └── 01_data_inspection.ipynb
 ├── data/                — Reference datasets committed to GitHub
@@ -57,7 +64,7 @@ sentinel2-brownfield-stoke/
 ├── outputs/
 ├── raw_data/            — Sentinel-2 satellite imagery — not committed to GitHub
 │   ├── README.md
-│   └── S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE/  — excluded from GitHub, see README.md to download
+│   └── S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE/  — see README.md to download
 ├── DESIGN.md
 ├── EDA.md
 ├── README.md
