@@ -86,6 +86,7 @@ graph LR
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
+| _arrange_band_array | loaded_bands: list | np.ndarray (pixels, n_bands) | stacks list of 2D band arrays, tranposes to correct axis order, reshapes to (pixels, n_bands) |
 | load_bands | safe_path: str | np.ndarray (pixels, 10) | Loads 10 selected bands at 20m, downsamples 10m bands |
 | load_scl | safe_path: str | np.ndarray (5490, 5490) | Loads SCL_20m.jp2 for nodata masking  |
 | mask_nodata | band_array: np.ndarray, scl_array: np.ndarray = None | np.ndarray (valid_pixels, 10) | Removes pixels where SCL class = 0. If scl_array is None masking is skipped — for use when SCL file is unavailable |
