@@ -39,3 +39,42 @@ raw_data/S2C_MSIL2A_...SAFE/S2C_MSIL2A_...SAFE/
 ### 7. File Location
 Place the extracted SAFE folder inside the raw_data/ directory.
 The raw_data/ folder is excluded from GitHub — you must download the data yourself.
+
+## Band Files
+
+### R20m — Native 20m resolution
+| File | Band | Wavelength | What it Measures |
+|---|---|---|---|
+| B05_20m.jp2 | Band 5 — Red edge | 705nm | Classifying vegetation |
+| B06_20m.jp2 | Band 6 — Red edge | 740nm | Classifying vegetation |
+| B07_20m.jp2 | Band 7 — Red edge | 783nm | Classifying vegetation |
+| B8A_20m.jp2 | Band 8A | 865nm | Classifying vegetation |
+| B11_20m.jp2 | Band 11 — SWIR 1 | 1610nm | Soil moisture — key brownfield indicator |
+| B12_20m.jp2 | Band 12 — SWIR 2 | 2190nm | Soil moisture — key brownfield indicator |
+
+### R10m — Native 10m resolution (downsampled to 20m in pipeline)
+| File | Band | Wavelength | What it Measures |
+|---|---|---|---|
+| B02_10m.jp2 | Band 2 — Blue | 490nm | Soil and vegetation discrimination |
+| B03_10m.jp2 | Band 3 — Green | 560nm | Vegetation contrast |
+| B04_10m.jp2 | Band 4 — Red | 665nm | Identifying landscape types |
+| B08_10m.jp2 | Band 8 — NIR | 842nm | Vegetation detection |
+
+## Scene Classification Layer (SCL)
+
+The SCL_20m.jp2 file classifies every pixel in the image. Used by mask_nodata() to remove invalid pixels before analysis.
+
+| Value | Class |
+|---|---|
+| 0 | No data — outside tile boundary |
+| 1 | Saturated or defective |
+| 2 | Dark area pixels |
+| 3 | Cloud shadow |
+| 4 | Vegetation |
+| 5 | Bare soil — primary brownfield indicator |
+| 6 | Water |
+| 7 | Unclassified |
+| 8 | Cloud medium probability |
+| 9 | Cloud high probability |
+| 10 | Thin cirrus |
+| 11 | Snow or ice |
