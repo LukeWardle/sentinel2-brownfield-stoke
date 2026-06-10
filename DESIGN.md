@@ -74,12 +74,14 @@ sentinel2-brownfield-stoke/
 
 ```mermaid
 graph LR
-    A[Raw SAFE Folder] --> B[validation.py]
-    B --> C[data.py]
-    C --> D[preprocess.py]
-    D --> E[pca.py]
-    E --> F[visualise.py]
-    F --> G[outputs/]
+    A[Raw SAFE Folder] --> B[validate_path]
+    B --> C[load_bands + load_scl]
+    C --> D[mask_nodata]
+    D --> E[validate_bands + validate_quality]
+    E --> F[preprocess.py]
+    F --> G[pca.py]
+    G --> H[visualise.py]
+    H --> I[outputs/]
 ```
 
 ### Module: data.py — Load and Prepare Band Data
@@ -127,7 +129,7 @@ graph LR
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| run_pipeline | safe_path: str | None - saves outputs to outputs/ folder | Orchestrates the full pipeline — calls validate_path, load_bands, load_scl, mask_nodata, validate_bands, centre_data, compute_covariance, spectral_decomposition, sort_variance, cumulative_variance_for_k, project, convert_k_to_rgb, false_map_creation, report_creation in sequence |
+| run_pipeline | safe_path: str | None — saves outputs to outputs/ folder | Orchestrates the full pipeline — calls validate_path, load_bands, load_scl, mask_nodata, validate_bands, validate_quality, centre_data, compute_covariance, spectral_decomposition, sort_variance, cumulative_variance_for_k, project, convert_k_to_rgb, false_map_creation, report_creation in sequence |
 
 ## 4. Risks
 
