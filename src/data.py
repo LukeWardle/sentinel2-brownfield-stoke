@@ -138,7 +138,6 @@ def load_scl(safe_path: str) -> np.ndarray:
         scl_array = src.read(1)
     return scl_array
 
-
 def mask_nodata(band_array: np.ndarray, scl_array: np.ndarray = None) -> np.ndarray:
     """
     mask_nodata - Uses the scl_array to remove the no data pixels (marked as 0) from the band_array.
@@ -149,12 +148,11 @@ def mask_nodata(band_array: np.ndarray, scl_array: np.ndarray = None) -> np.ndar
                                         Layers. If None masking is skipped.
 
     Returns:
-      np.ndarray: Shape (valid_pixels, 10) - Removes pixels where the SCL class = 0,
-                                             if scl_array is None then masking is skipped.
-
+      np.ndarray: Shape (valid_pixels, 10) - Removes pixels where SCL class = 0 (nodata)
+                                             or SCL class = 1 (defective/saturated).
     """
     if scl_array is None:
         return band_array
     scl_flat = scl_array.flatten()
-    mask = scl_flat != 0
+    mask = (scl_flat != 0) & (scl_flat != 1)
     return band_array[mask]

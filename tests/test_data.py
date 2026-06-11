@@ -7,6 +7,7 @@ import os
 import numpy as np
 import rasterio
 from src.data import load_bands, load_scl, mask_nodata 
+from src.data import _arrange_band_array
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -81,8 +82,6 @@ def test_arrange_band_array_correct_data_arrangement():
     contains readings from one pixel location across all bands.
     Uses known small arrays to verify correctness without satellite data.
     """
-    from src.data import _arrange_band_array
-    
     # Create 3 fake bands of shape (2, 2) with known values
     band1 = np.array([[1, 2], [3, 4]])
     band2 = np.array([[5, 6], [7, 8]])
@@ -150,7 +149,7 @@ def test_mask_nodata_removes_nodata_pixels():
     Tests that mask_nodata removes pixels with value of 0
     """
     band_array = np.ones((9, 10))  # 9 pixels, 10 bands
-    scl_array = np.array([0, 1, 1, 0, 1, 1, 1, 0, 1]).reshape(3, 3)  # 3 zeros, 6 valid
+    scl_array = np.array([0, 4, 4, 0, 4, 4, 4, 0, 4]).reshape(3, 3) # 3 nodata (0), 6 vegetation (4)
     result = mask_nodata(band_array, scl_array)
     assert result.shape[0] == 6  # only 6 valid pixels remain
 
@@ -159,7 +158,7 @@ def test_mask_nodata_returns_correct_shape():
     Tests that mask_nodata returns correct shape after removing nodata pixels.
     """
     band_array = np.ones((9, 10))
-    scl_array = np.array([0, 1, 1, 0, 1, 1, 1, 0, 1]).reshape(3, 3)
+    scl_array = np.array([0, 4, 4, 0, 4, 4, 4, 0, 4]).reshape(3, 3)
     result = mask_nodata(band_array, scl_array)
     assert result.ndim == 2
     assert result.shape[1] == 10

@@ -100,7 +100,7 @@ def test_validate_quality_valid_scl_low_cloud():
     """
     Tests that validate_quality returns valid array with low cloud.
     """
-    scl = np.ones((10, 10), dtype=np.uint8)  # all vegetation (value 1), no cloud
+    scl = np.full((10, 10), 4, dtype=np.uint8)  # all vegetation (value 4), no cloud
     result = validate_quality(scl)
     assert result == True
 
@@ -109,7 +109,7 @@ def test_validate_quality_cloud_coverage_exceeds_threshold():
     """
     Test that validate_quality raises a ValueError when threshold is exceeded.
     """
-    scl = np.ones((10, 10), dtype=np.uint8)
+    scl = np.full((10, 10), 4, dtype=np.uint8)
     scl[:, :5] = 9  # half the pixels are cloud (50% — exceeds 10% threshold)
     with pytest.raises(ValueError):
         validate_quality(scl)
