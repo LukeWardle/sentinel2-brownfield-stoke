@@ -45,8 +45,9 @@ def load_bands(safe_path: str) -> np.ndarray:
       np.ndarray: Shape (pixels, 10) - stacked array of 10 bands at 20m resolution.
 
     Raises:
-      FileNotFoundError: If safe_path does not exist
-      ValueError: If expected band files are missing
+      ValueError: If safe_path does not exist
+      ValueError: If expected band files are missing (R20m bands)
+      ValueError: If expected band files are missing (R10m bands)
       ValueError: if band shapes are inconsistent after downsampling
     """
     granule_path = os.path.join(safe_path, "GRANULE")
