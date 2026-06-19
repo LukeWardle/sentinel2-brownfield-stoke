@@ -66,6 +66,80 @@ def test_convert_k_to_rgb_raises_valueerror_for_fewer_than_3_columns():
     with pytest.raises(ValueError):
         convert_k_to_rgb(X_reduced)
 
+# --- false_map_creation tests ---
+def test_false_map_creation_creates_file(tmp_path):
+    """
+    Tests that false_map_creation creates a PNG file in output_dir
+    with a filename starting with false_colour_map_.
+    """
+    rgb_array = np.array([
+        [255, 0, 0],
+        [0, 255, 0],
+        [0, 0, 255],
+        [255, 255, 255],
+    ], dtype=np.uint8)
+    false_map_creation(rgb_array, str(tmp_path))
+
+    files = os.listdir(tmp_path)
+    matching = [f for f in files if f.startswith("false_colour_map_") and f.endswith(".png")]
+    assert len(matching) == 1
+    assert len(matching) == 1
+
+
+def test_false_map_creation_reconstructs_correct_shape_with_mask(tmp_path):
+    """
+    Tests that false_map_creation correctly reconstructs a 2x2 original image
+    from 3 valid pixels using mask and original_shape, placing the masked-out
+    pixel back as black (0,0,0) in its correct position.
+    """
+    rgb_array = np.array([
+        [255, 0, 0],
+        [0, 255, 0],
+        [0, 0, 255],
+    ], dtype=np.uint8)
+    # Original was 2x2 = 4 pixels. Pixel index 1 (top-right) was masked out.
+    mask = np.array([True, False, True, True])
+    original_shape = (2, 2)
+
+    false_map_creation(rgb_array, str(tmp_path), mask, original_shape)
+
+    files = os.listdir(tmp_path)
+    matching = [f for f in files if f.startswith("false_colour_map_") and f.endswith(".png")]
+    assert len(matching) == 1
+
+
+def test_false_map_creation_falls_back_to_square_when_mask_none(tmp_path):
+    """
+    Tests that false_map_creation falls back to square reshape logic
+    when mask and original_shape are None — e.g. when scl_array was
+    never provided to mask_nodata.
+    """
+    rgb_array = np.ones((9, 3), dtype=np.uint8)  # 9 pixels = 3x3 square
+    false_map_creation(rgb_array, str(tmp_path), mask=None, original_shape=None)
+
+    files = os.listdir(tmp_path)
+    matching = [f for f in files if f.startswith("false_colour_map_") and f.endswith(".png")]
+    assert len(matching) == 1
+
+
+def test_false_map_creation_raises_valueerror_for_wrong_columns():
+    """
+    Tests that false_map_creation raises ValueError when rgb_array
+    does not have exactly 3 columns.
+    """
+    rgb_array = np.ones((10, 2), dtype=np.uint8)
+    with pytest.raises(ValueError):
+        false_map_creation(rgb_array, "some/dir")
+
+
+def test_false_map_creation_raises_filenotfounderror_for_missing_dir():
+    """
+    Tests that false_map_creation raises FileNotFoundError when
+    output_dir does not exist.
+    """
+    rgb_array = np.ones((9, 3), dtype=np.uint8)
+    with pytest.raises(FileNotFoundError):
+        false_map_creation(rgb_array, "/nonexistent/output/dir")
 
 # --- report_creation tests ---
 def test_report_creation_creates_file(tmp_path):
@@ -113,8 +187,4 @@ def test_report_creation_raises_filenotfounderror_for_missing_dir():
         report_creation(2, sorted_eigenvalues, "/nonexistent/output/dir")
 
 
-# --- false_map_creation tests ---
-# NOTE: false_map_creation has a known bug — it assumes pixel count forms
-# a perfect square when reshaping, which is false once mask_nodata removes
-# pixels. Tests deferred until reshape logic is fixed using actual image
-# dimensions passed through the pipeline. See session log for details.
+

@@ -43,14 +43,22 @@ def convert_k_to_rgb(X_reduced: np.ndarray) -> np.ndarray:
         rgb_array[:, i] = normalised.astype(np.uint8)
     return rgb_array
 
-def false_map_creation(rgb_array: np.ndarray, output_dir: str):
+def false_map_creation(rgb_array: np.ndarray, output_dir: str, mask: np.ndarray = None,
+                       original_shape: tuple = None) -> None:
     """
-    Renders RGB array as false colour map using matplotlib. Saves the map to outputs/
-    with a timestamp as filename.
+    Renders RGB array as false colour map using matplotlib. Reconstructs the full
+    2D image by placing valid pixels back into their original positions using mask
+    and original_shape, with nodata/defective pixels rendered as black. Saves the
+    map to outputs/ with a timestamp as filename.
 
     Args:
-        rgb_array (np.ndarray): Shape (pixels, 3) — RGB values normalised to 0-255.
+        rgb_array (np.ndarray): Shape (valid_pixels, 3) — RGB values normalised to 0-255.
         output_dir (str): Path to outputs/ folder where map will be saved.
+        mask (np.ndarray, optional): Shape (total_pixels,) — boolean mask marking which
+                           pixels were kept (True) or removed (False) by mask_nodata.
+                           If None, rgb_array is assumed to contain every pixel.
+        original_shape (tuple, optional): Original 2D shape (height, width) before
+                           flattening. If None, falls back to assuming a square image.
 
     Returns:
         None — saves false_colour_map_YYYYMMDD_HHMMSS.png to output_dir.
@@ -65,8 +73,14 @@ def false_map_creation(rgb_array: np.ndarray, output_dir: str):
     if not os.path.exists(output_dir):
         raise FileNotFoundError(f"output_dir does not exist: {output_dir}")
 
-    side_length = int(np.sqrt(rgb_array.shape[0]))
-    image_array = rgb_array.reshape(side_length, side_length, 3)
+    if mask is None or original_shape is None:
+        side_length = int(np.sqrt(rgb_array.shape[0]))
+        image_array = rgb_array.reshape(side_length, side_length, 3)
+    else:
+        total_pixels = original_shape[0] * original_shape[1]
+        full_rgb = np.zeros((total_pixels, 3), dtype=np.uint8)
+        full_rgb[mask] = rgb_array
+        image_array = full_rgb.reshape(original_shape[0], original_shape[1], 3)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"false_colour_map_{timestamp}.png"
@@ -79,7 +93,7 @@ def false_map_creation(rgb_array: np.ndarray, output_dir: str):
     plt.savefig(filepath, bbox_inches="tight", dpi=150)
     plt.close()
     
-def report_creation(k: int, sorted_eigenvalues: np.ndarray, output_dir: str):
+def report_creation(k: int, sorted_eigenvalues: np.ndarray, output_dir: str) -> None:
     """
     Generates a results report, saved to outputs/ with a timestamp filename.
 
@@ -119,7 +133,7 @@ def report_creation(k: int, sorted_eigenvalues: np.ndarray, output_dir: str):
         report_lines.append(f"- PC{i+1}: {pct:.2f}%")
 
     report_lines.append(f"\n## Interpretation")
-    report_lines.append(f"\nThe false colour map highlights areas of similar spectral signature. Distinct colour clusters may represent brownfield land, vegetation, urban fabric or water. All candidate sites require physical verification before any planning decision.")
+    report_lines.append(f"\nThe false colour map highlights areas of similar spectral signature using the top 3 principal components. The two largest patterns in the data — overall brightness (PC1, {sorted_eigenvalues[0]/total_variance*100:.1f}%) and vegetation contrast (PC2, {sorted_eigenvalues[1]/total_variance*100:.1f}%) — dominate the visible colours. Subtler spectral differences that may indicate brownfield land are present in lower-ranked components and are not always easily distinguished by eye in this map alone. All candidate sites require physical verification before any planning decision, and Version 2 of this tool will introduce bare soil pre-filtering to strengthen the brownfield signal before visualisation.")
 
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))

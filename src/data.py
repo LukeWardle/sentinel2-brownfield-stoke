@@ -139,9 +139,11 @@ def load_scl(safe_path: str) -> np.ndarray:
         scl_array = src.read(1)
     return scl_array
 
-def mask_nodata(band_array: np.ndarray, scl_array: np.ndarray = None) -> np.ndarray:
+def mask_nodata(band_array: np.ndarray, scl_array: np.ndarray = None) -> tuple:
     """
-    mask_nodata - Uses the scl_array to remove the no data pixels (marked as 0) from the band_array.
+    mask_nodata - Uses the scl_array to remove the no data and defective pixels
+    from the band_array. Also returns the mask and original 2D shape so that
+    valid pixels can be correctly placed back into a 2D grid later for visualisation.
 
     Args:
       band_array (np.ndarray): shape (pixels, 10) - Stacked array of 10 bands.
@@ -149,11 +151,17 @@ def mask_nodata(band_array: np.ndarray, scl_array: np.ndarray = None) -> np.ndar
                                         Layers. If None masking is skipped.
 
     Returns:
-      np.ndarray: Shape (valid_pixels, 10) - Removes pixels where SCL class = 0 (nodata)
-                                             or SCL class = 1 (defective/saturated).
+      tuple:
+        np.ndarray: Shape (valid_pixels, 10) - band_array with pixels removed where
+                    SCL class = 0 (nodata) or SCL class = 1 (defective/saturated).
+                    If scl_array is None, band_array is returned unchanged.
+        np.ndarray or None: Shape (pixels,) - boolean mask marking which pixels were
+                    kept (True) or removed (False). None if scl_array is None.
+        tuple or None: Original 2D shape (height, width) of scl_array before flattening,
+                    needed to reconstruct a 2D image later. None if scl_array is None.
     """
     if scl_array is None:
-        return band_array
+        return band_array, None, None
     scl_flat = scl_array.flatten()
     mask = (scl_flat != 0) & (scl_flat != 1)
-    return band_array[mask]
+    return band_array[mask], mask, scl_array.shape
