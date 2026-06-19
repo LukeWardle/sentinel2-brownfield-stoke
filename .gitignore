@@ -4,3 +4,6 @@ raw_data/*
 *.SAFE
 .ipynb_checkpoints/
 data/uk_local_authority_boundaries.geojson
+outputs/*
+!outputs/.gitkeep
+__pycache__/
