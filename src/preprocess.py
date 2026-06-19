@@ -31,7 +31,7 @@ def centre_data(band_array: np.ndarray) -> np.ndarray:
 
 def compute_covariance(centred_array: np.ndarray) -> np.ndarray:
     """
-    Computes the covariance matrix using the formula $\Sigma = (1/n)X^TX$.
+    Computes the covariance matrix using the formula $\\Sigma = (1/n)X^TX$.
 
     Args:
         centred_array (np.ndarray): array of centred band pixel values.
