@@ -91,7 +91,7 @@ graph LR
 | _arrange_band_array | loaded_bands: list | np.ndarray (pixels, n_bands) | stacks list of 2D band arrays, tranposes to correct axis order, reshapes to (pixels, n_bands) |
 | load_bands | safe_path: str | np.ndarray (pixels, 10) | Loads 10 selected bands at 20m, downsamples 10m bands |
 | load_scl | safe_path: str | np.ndarray (5490, 5490) | Loads SCL_20m.jp2 for nodata masking  |
-| mask_nodata | band_array: np.ndarray, scl_array: np.ndarray = None | np.ndarray (valid_pixels, 10) | Removes pixels where SCL class = 0. If scl_array is None masking is skipped — for use when SCL file is unavailable |
+| mask_nodata | band_array: np.ndarray, scl_array: np.ndarray = None | tuple — (np.ndarray (valid_pixels, 10), np.ndarray or None (pixels,), tuple or None) | Removes pixels where SCL class = 0 (nodata) or SCL class = 1 (defective/saturated). Returns the filtered array, the boolean mask used, and the original 2D shape — needed by false_map_creation to reconstruct the image. If scl_array is None, masking is skipped and mask/original_shape are returned as None |
 >**Note:** load_scl is specific to Sentinel-2 L2A products. Future versions supporting other satellite products will require a different masking approach.
 
 ### Module: validation.py - All Quality Checks
@@ -118,12 +118,10 @@ graph LR
 | project | centred_array: np.ndarray (pixels, 10), eigenvectors: np.ndarray (10, 10), k: int | X_reduced: np.ndarray (pixels, k) | Projects centred data onto top k eigenvectors using $X_{\text{reduced}} = X_{\text{centred}} \cdot Q[:,:k]$ |
 
 ### Module: visualise.py — False Colour Map and Results Report
-
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| convert_k_to_rgb | X_reduced: np.ndarray (pixels, k) | rgb_array: np.ndarray (pixels, 3) | Takes top 3 principal components and normalises to 0-255 range for RGB colour channels |
-| false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Renders RGB array as false colour map using matplotlib and saves with timestamped filename to outputs/ to prevent overwriting on multiple runs |
-| report_creation | k: int, sorted_eigenvalues: np.ndarray (10,), output_dir: str | None — saves results_report_YYYYMMDD_HHMMSS.md to outputs/ | Generates plain English results report for planning officials including variance explained and brownfield candidate findings — saves with timestamped filename to prevent overwriting on multiple runs |
+| convert_k_to_rgb | X_reduced: np.ndarray (pixels, k) | rgb_array: np.ndarray (pixels, 3) | Takes top 3 principal components and normalises to 0-255 range for RGB colour channels. Raises ValueError if fewer than 3 components, empty array, or a component has zero variance |
+| false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str, mask: np.ndarray = None, original_shape: tuple = None | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Reconstructs the full 2D image by placing valid pixels back into their original positions using mask and original_shape, with masked-out pixels rendered as black. If mask or original_shape is None, falls back to
 
 ### Module: main.py — Pipeline Orchestration
 
