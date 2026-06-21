@@ -18,18 +18,38 @@ Stoke-on-Trent has one of the highest concentrations of brownfield land in Engla
 - Produces a false colour map highlighting candidate brownfield sites
 - Generates a plain English results report for planning officials
 
+---
+
+## Results
+
+Running the pipeline on the Sentinel-2 image captured 2026-05-25 (during a UK heatwave with near-zero cloud cover) produced the following:
+
+![False colour map of Stoke-on-Trent](docs/images/false_colour_map.png)
+
+**PCA Variance Breakdown:**
+
+| Component | Variance Explained | Interpretation |
+|---|---|---|
+| PC1 | 82.08% | Overall brightness — dominant pattern |
+| PC2 | 13.73% | Vegetation vs non-vegetation contrast |
+| PC3 | 1.80% | Subtle spectral differences — likely brownfield signal |
+
+Only 2 components were needed to reach the 95% variance threshold, meaning the 10 spectral bands are highly correlated across this landscape. The false colour map always renders the top 3 components regardless of k, so PC3 — where the brownfield signal most likely resides — is visible but subtle, sitting beneath the much stronger brightness and vegetation patterns.
+
+This is an important finding, not a limitation to hide: it confirms that unsupervised PCA alone gives only a partial view of brownfield land in Stoke-on-Trent, and is the direct justification for Version 2's Bare Soil Index pre-filtering — isolating bare soil pixels before running PCA, so the dominant spectral pattern becomes brownfield-relevant rather than brightness-driven.
+
 This is a candidate identification tool. All outputs require physical verification before any planning decision is made.
 
 ---
 
 ## Project Status
 
-Version 1 — In development
+Version 1 — Complete
 
 | Version | Status | Description |
 |---|---|---|
-| v1 | 🔄 In development | PCA spectral analysis pipeline — candidate site identification |
-| v2 | Planned | Bare Soil Index preprocessing, brownfield register validation, change detection |
+| v1 | ✅ Complete | PCA spectral analysis pipeline — candidate site identification |
+| v2 | 🔄 Planned | Bare Soil Index preprocessing, brownfield register validation, change detection |
 | v3 | Planned | Supervised classification, Streamlit web interface, contamination filtering |
 | v4 | Planned | Multi-city expansion |
 
@@ -69,11 +89,20 @@ pip install -r requirements.txt
 
 ---
 
-## Project Structure
+## Running the Pipeline
 
-See [DESIGN.md](DESIGN.md) for full architecture and function-level documentation.
+Once dependencies are installed and the SAFE folder is downloaded:
 
-See [EDA.md](EDA.md) for exploratory data analysis of the Sentinel-2 imagery.
+```bash
+python src/main.py
+```
+
+This runs the full pipeline end to end and saves two timestamped files to outputs/:
+
+- `false_colour_map_YYYYMMDD_HHMMSS.png` — the PCA false colour map
+- `results_report_YYYYMMDD_HHMMSS.md` — plain English summary of variance explained per component
+
+To run the pipeline on a different SAFE folder or save to a different location, edit the `SAFE_PATH` and `OUTPUT_DIR` variables at the bottom of `src/main.py`.
 
 ---
 
