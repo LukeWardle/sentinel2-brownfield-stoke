@@ -61,7 +61,7 @@ sentinel2-brownfield-stoke/
 │   ├── contaminated_land_register.pdf
 │   ├── contaminated_land_special_sites.csv
 │   └── uk_local_authority_boundaries.geojson
-├── outputs/
+├── outputs/              — Generated false colour maps and results reports, gitignored except folder structure
 ├── raw_data/            — Sentinel-2 satellite imagery — not committed to GitHub
 │   ├── README.md
 │   └── S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE/  — see README.md to download
@@ -153,7 +153,7 @@ The pipeline is considered successful when all of the following conditions are m
 
 The outputs folder contains two timestamped files after a successful run — a false colour map saved as false_colour_map_YYYYMMDD_HHMMSS.png and a results report saved as results_report_YYYYMMDD_HHMMSS.md. If either file is missing the pipeline has not completed successfully.
 
-The PCA pipeline is considered correct when all unit tests pass. Each of the six modules has at least one test per function — a minimum of 15 tests covering data loading, validation, preprocessing, decomposition, projection and visualisation. Edge cases including missing bands, corrupt arrays and excessive cloud cover must also be tested. The full test suite must pass with zero failures before the pipeline is considered production ready.
+The PCA pipeline is considered correct when all unit tests pass. Each of the six modules has at least one test per function — a minimum of 60 tests covering data loading, validation, preprocessing, decomposition, projection and visualisation. Edge cases including missing bands, corrupt arrays and excessive cloud cover must also be tested. The full test suite must pass with zero failures before the pipeline is considered production ready.
 
 The false colour map is considered useful when it visually distinguishes at least three land cover types — brownfield bare soil, vegetation and urban fabric — as clearly different colours. Water bodies such as the River Trent should also appear as a distinct colour. The map should be interpretable by a planning official without data science knowledge.
 
@@ -161,7 +161,7 @@ The results report is considered complete when it contains the number of princip
 
 All pipeline runs must complete within a reasonable time — target under 5 minutes on a standard laptop for the full Stoke-on-Trent dataset.
 
-Candidate sites identified by the false colour map should be cross-referenced against data/brownfield_register.csv to identify overlap with known registered sites and highlight potential unregistered brownfield land.
+Candidate sites identified by the false colour map should be cross-referenced against the brownfield register files in data/ (brownfield_register_2024.csv being the current register) to identify overlap with known registered sites and highlight potential unregistered brownfield land.
 
 ## 6. Future Versions
 
