@@ -118,16 +118,18 @@ graph LR
 | project | centred_array: np.ndarray (pixels, 10), eigenvectors: np.ndarray (10, 10), k: int | X_reduced: np.ndarray (pixels, k) | Projects centred data onto top k eigenvectors using $X_{\text{reduced}} = X_{\text{centred}} \cdot Q[:,:k]$ |
 
 ### Module: visualise.py — False Colour Map and Results Report
+
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | convert_k_to_rgb | X_reduced: np.ndarray (pixels, k) | rgb_array: np.ndarray (pixels, 3) | Takes top 3 principal components and normalises to 0-255 range for RGB colour channels. Raises ValueError if fewer than 3 components, empty array, or a component has zero variance |
-| false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str, mask: np.ndarray = None, original_shape: tuple = None | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Reconstructs the full 2D image by placing valid pixels back into their original positions using mask and original_shape, with masked-out pixels rendered as black. If mask or original_shape is None, falls back to
+| false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str, mask: np.ndarray = None, original_shape: tuple = None | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Reconstructs the full 2D image by placing valid pixels back into their original positions using mask and original_shape, with masked-out pixels rendered as black. If mask or original_shape is None, falls back to assuming a square image (Version 1 limitation for use without nodata masking). Renders RGB array as false colour map using matplotlib and saves with timestamped filename to outputs/ |
+| report_creation | k: int, sorted_eigenvalues: np.ndarray (10,), output_dir: str | None — saves results_report_YYYYMMDD_HHMMSS.md to outputs/ | Generates plain English results report for planning officials including variance explained and brownfield candidate findings — saves with timestamped filename to outputs/ |
 
 ### Module: main.py — Pipeline Orchestration
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| run_pipeline | safe_path: str | None — saves outputs to outputs/ folder | Orchestrates the full pipeline — calls validate_path, load_bands, load_scl, mask_nodata, validate_bands, validate_quality, centre_data, compute_covariance, spectral_decomposition, sort_variance, cumulative_variance_for_k, project, convert_k_to_rgb, false_map_creation, report_creation in sequence |
+| run_pipeline | safe_path: str, output_dir: str | None — saves outputs to outputs/ folder | Orchestrates the full pipeline — calls validate_path, load_bands, load_scl, mask_nodata, validate_bands, validate_quality, centre_data, compute_covariance, spectral_decomposition, sort_variance, cumulative_variance_for_k, project (k components, for variance report), project (3 components, for RGB map), convert_k_to_rgb, false_map_creation, report_creation in sequence |
 
 ## 4. Risks
 
