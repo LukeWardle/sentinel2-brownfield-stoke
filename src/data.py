@@ -14,6 +14,9 @@ import rasterio
 import numpy as np
 import os
 
+bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
+bands_10m = ["B02", "B03", "B04", "B08"]
+
 def _arrange_band_array(loaded_bands: list) -> np.ndarray:
     """
     Arranges a list of 2D band arrays into a single (pixels, n_bands) array.
@@ -58,8 +61,6 @@ def load_bands(safe_path: str) -> np.ndarray:
     img_data_path = os.path.join(granule_path, granule_name, "IMG_DATA")
     r20m_path = os.path.join(img_data_path, "R20m")
     r10m_path = os.path.join(img_data_path, "R10m")
-    bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
-    bands_10m = ["B02", "B03", "B04", "B08"]
     loaded_bands = []
 
     # Check all R20m bands exist before loading

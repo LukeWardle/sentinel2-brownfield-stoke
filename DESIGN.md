@@ -118,6 +118,7 @@ graph LR
 |---|---|---|---|
 | centre_data | band_array: np.ndarray (pixels, 10) | centred_array: np.ndarray (pixels, 10) | Subtracts column mean from each band - centres data around zero |
 | compute_covariance | centred_array: np.ndarray (pixels, 10) | covariance_matrix: np.ndarray (10, 10) | Computes $\Sigma = (1/n)X^TX$ — produces symmetric matrix for spectral decomposition |
+| compute_bsi | band_array: np.ndarray (pixels, 10), bands_20m: list of band names for 20m, bands_10m: list of band names for 10m | bsi_array: np.ndarray (pixels,) | Computes Bare Soil Index using BSI = ((B11+B04)-(B08+B02))/((B11+B04)+(B08+B02)) — uses bands_20m and bands_10m combined with .index() to locate each band's column in band_array. Produces one BSI value per pixel, used to pre-filter likely bare soil pixels before PCA |
 
 ### Module: pca.py — Spectral Decomposition, Choose k, Project
 

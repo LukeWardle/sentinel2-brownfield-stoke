@@ -4,7 +4,7 @@ test_preprocess.py - Unit tests for preprocess.py
 """
 import pytest
 import numpy as np
-from src.preprocess import centre_data, compute_covariance
+from src.preprocess import centre_data, compute_covariance, compute_bsi
 
 # --- centre_data tests ---
 def test_centre_data_means_zero_after_centring():
@@ -93,3 +93,42 @@ def test_compute_covariance_correct_values():
     expected = (1/2) * arr.T @ arr
     result = compute_covariance(arr)
     assert np.allclose(result, expected)
+
+# --- compute_bsi tests ---
+def test_compute_bsi_correct_values():
+    """
+    Tests that compute_bsi correctly calculates BSI using known band values,
+    matching the formula ((B11+B04)-(B08+B02))/((B11+B04)+(B08+B02)).
+    """
+    bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
+    bands_10m = ["B02", "B03", "B04", "B08"]
+    band_array = np.zeros((2, 10))
+    bands_list = bands_20m + bands_10m
+    band_array[:, bands_list.index('B11')] = [10, 20]
+    band_array[:, bands_list.index('B04')] = [10, 20]
+    band_array[:, bands_list.index('B08')] = [5, 5]
+    band_array[:, bands_list.index('B02')] = [5, 5]
+    result = compute_bsi(band_array, bands_20m, bands_10m)
+    expected = np.array([10/30, 30/50])
+    assert np.allclose(result, expected)
+
+def test_compute_bsi_zero_denominator_returns_zero():
+    """
+    Tests that compute_bsi returns 0 for a pixel where the denominator
+    would be zero, instead of raising a division error or returning inf/nan.
+    """
+    bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
+    bands_10m = ["B02", "B03", "B04", "B08"]
+    band_array = np.zeros((1, 10))
+    result = compute_bsi(band_array, bands_20m, bands_10m)
+    assert result[0] == 0
+
+def test_compute_bsi_correct_shape():
+    """
+    Tests that compute_bsi returns a 1D array with one BSI value per pixel.
+    """
+    bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
+    bands_10m = ["B02", "B03", "B04", "B08"]
+    band_array = np.ones((50, 10))
+    result = compute_bsi(band_array, bands_20m, bands_10m)
+    assert result.shape == (50,)
