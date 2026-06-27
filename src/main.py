@@ -10,7 +10,8 @@ import sys
 import os
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.data import load_bands, load_scl, mask_nodata
+from src.data import load_bands, load_scl
+from src.scl_filtering import mask_nodata
 from src.validation import validate_path, validate_bands, validate_quality
 from src.preprocess import centre_data, compute_covariance
 from src.pca import spectral_decomposition, sort_variance, cumulative_variance_for_k, project

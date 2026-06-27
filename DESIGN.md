@@ -35,6 +35,7 @@ The system then normalises the first 3 principal components to the range of 0-25
 sentinel2-brownfield-stoke/
 ├── src/
 │   ├── data.py          — Load and prepare band data
+│   ├── scl_filtering.py — Removes pixels based on SCL class
 │   ├── validation.py    — All quality checks
 │   ├── preprocess.py    — Centre data and build covariance matrix
 │   ├── pca.py           — Spectral decomposition, choose k, project
@@ -49,7 +50,9 @@ sentinel2-brownfield-stoke/
 │   ├── test_visualise.py
 │   └── test_main.py
 ├── notebooks/
-│   └── 01_data_inspection.ipynb
+│   ├── 01_data_inspection_eda.ipynb
+│   ├── 02_brownfield_register_eda.ipynb
+│   └── 03_boundary_file_eda.ipynb
 ├── data/                — Reference datasets committed to GitHub
 │   ├── README.md
 │   ├── brownfield_register_2019.csv
@@ -61,6 +64,9 @@ sentinel2-brownfield-stoke/
 │   ├── contaminated_land_register.pdf
 │   ├── contaminated_land_special_sites.csv
 │   └── uk_local_authority_boundaries.geojson
+├── docs/
+│   └── images/
+│       └── false_colour_map.png
 ├── outputs/              — Generated false colour maps and results reports, gitignored except folder structure
 ├── raw_data/            — Sentinel-2 satellite imagery — not committed to GitHub
 │   ├── README.md
@@ -76,7 +82,7 @@ sentinel2-brownfield-stoke/
 graph LR
     A[Raw SAFE Folder] --> B[validate_path]
     B --> C[load_bands + load_scl]
-    C --> D[mask_nodata]
+    C --> D[scl_filtering.py: mask_nodata]
     D --> E[validate_bands + validate_quality]
     E --> F[preprocess.py]
     F --> G[pca.py]
@@ -91,8 +97,13 @@ graph LR
 | _arrange_band_array | loaded_bands: list | np.ndarray (pixels, n_bands) | stacks list of 2D band arrays, tranposes to correct axis order, reshapes to (pixels, n_bands) |
 | load_bands | safe_path: str | np.ndarray (pixels, 10) | Loads 10 selected bands at 20m, downsamples 10m bands |
 | load_scl | safe_path: str | np.ndarray (5490, 5490) | Loads SCL_20m.jp2 for nodata masking  |
-| mask_nodata | band_array: np.ndarray, scl_array: np.ndarray = None | tuple — (np.ndarray (valid_pixels, 10), np.ndarray or None (pixels,), tuple or None) | Removes pixels where SCL class = 0 (nodata) or SCL class = 1 (defective/saturated). Returns the filtered array, the boolean mask used, and the original 2D shape — needed by false_map_creation to reconstruct the image. If scl_array is None, masking is skipped and mask/original_shape are returned as None |
 >**Note:** load_scl is specific to Sentinel-2 L2A products. Future versions supporting other satellite products will require a different masking approach.
+
+### Module: scl_filtering.py - Removes Pixels Based on SCL Class
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| mask_nodata | band_array: np.ndarray, scl_array: np.ndarray = None | tuple — (np.ndarray (valid_pixels, 10), np.ndarray or None (pixels,), tuple or None) | Removes pixels where SCL class = 0 (nodata) or SCL class = 1 (defective/saturated). Returns the filtered array, the boolean mask used, and the original 2D shape — needed by false_map_creation to reconstruct the image. If scl_array is None, masking is skipped and mask/original_shape are returned as None |
 
 ### Module: validation.py - All Quality Checks
 | Function | Input | Output | Purpose |
