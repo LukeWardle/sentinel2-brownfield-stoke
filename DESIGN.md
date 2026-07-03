@@ -47,13 +47,14 @@ sentinel2-brownfield-stoke/
 │   ├── data_loading_satellite.py  — Load and prepare Sentinel-2 band data
 │   ├── scl_filtering.py           — Removes pixels based on SCL class
 │   ├── validation_satellite.py    — Satellite image quality checks
+│   ├── validation_database.py     — Database input validation
 │   ├── preprocess.py              — Centre data, build covariance matrix, compute BSI
 │   ├── pca.py                     — Spectral decomposition, choose k, project
 │   ├── coordinate_conversion_pixel.py — Converts external coordinates to UTM and pixel positions
 │   ├── clustering.py              — Groups spectrally similar pixels into candidate sites
 │   ├── database_query.py          — Runtime database queries and candidate site storage
 │   ├── api_copernicus.py          — Copernicus API authentication and SAFE file download
-│   ├── visualise.py               — False colour map and results report
+│   ├── visualise.py               — False colour map, results report and interactive map
 │   └── main.py                    — Pipeline orchestration
 ├── scripts/
 │   ├── setup_boundaries.py        — One-time load of UK council boundaries into database
@@ -62,6 +63,7 @@ sentinel2-brownfield-stoke/
 │   ├── __init__.py
 │   ├── test_data_loading_satellite.py
 │   ├── test_validation_satellite.py
+│   ├── test_validation_database.py
 │   ├── test_scl_filtering.py
 │   ├── test_preprocess.py
 │   ├── test_pca.py
@@ -94,6 +96,7 @@ sentinel2-brownfield-stoke/
 ├── raw_data/             — Sentinel-2 satellite imagery — not committed to GitHub
 │   ├── README.md
 │   └── S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE/  — see README.md to download
+├── .env                  — Local database credentials — never committed to git
 ├── DATABASE.md
 ├── DESIGN.md
 ├── EDA.md
@@ -176,31 +179,50 @@ graph TD
 | convert_bng_to_utm | x: float, y: float | utm_position: dict | Converts a coordinate from EPSG:27700 (British National Grid) into EPSG:32630 (UTM Zone 30N) using pyproj.Transformer, matching the conversion already tested in 02_brownfield_register_eda.ipynb. utm_position contains the converted x and y values, ready to be passed into utm_coordinate_to_pixel |
 | utm_coordinate_to_pixel | x: float, y: float, tile_metadata: dict | pixel_position: dict | Converts a UTM coordinate into a pixel position using column = int((x-left)/resolution) and row = int((top-y)/resolution) — tile_metadata supplies left, top and resolution from the satellite image. Used by register validation and AOI clipping to locate specific coordinates within the pixel grid |
 
-### Module: clustering.py — Groups spectrally similar pixels into candidate sites
+### Module: clustering.py — Groups Spectrally Similar Pixels into Candidate Sites
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
+| group_pixels_for_candidate_sites | X_reduced: np.ndarray (pixels, k), mask: np.ndarray (pixels,), original_shape: tuple, similarity_threshold: float = 0.1 | candidate_groups: dict — keys are site IDs, values are lists of pixel indices belonging to that site | Groups neighbouring pixels with similar spectral signatures into discrete candidate sites using connected-component approach. Pixels join the same site if spatially adjacent and spectrally similar within similarity_threshold. Uses mask and original_shape to reconstruct spatial relationships lost when image was flattened |
+| calculate_site_properties | candidate_groups: dict, bsi_array: np.ndarray (pixels,), mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_properties: list — list of dicts, one per site, each containing pixel_count, mean_bsi, centroid_utm_x, centroid_utm_y | Calculates properties for each candidate site — pixel count, mean BSI value across all site pixels, and centroid UTM coordinates converted using tile_metadata. Results are used for database storage and register matching |
+| generate_boundary_polygons | candidate_groups: dict, mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_polygons: list — list of dicts, one per site, each containing site_id and boundary polygon in UTM coordinates | Generates boundary polygon for each candidate site by tracing the outline of grouped pixels in the 2D grid and converting pixel positions to UTM coordinates using tile_metadata. Polygons are used for database storage and Folium interactive map display |
 
 
-### Module: database_query.py — Runtime database queries and candidate site  sites
-
-| Function | Input | Output | Purpose |
-|---|---|---|---|
-
-
-### Module: api_copernicus.py — Copernicus API authentication and SAFE file
+### Module: database_query.py — Runtime Database Queries and Candidate Site Storage
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
+| retrieve_council_boundary_gss | gss_code: str, connection | boundary_polygon: dict — boundary geometry in UTM coordinates ready for AOI clipping | Queries council_boundaries table by GSS code and returns the council boundary polygon converted to UTM coordinates. Used by AOI clipping to constrain satellite image processing to the correct council area |
+| retrieve_brownfield_register_data | gss_code: str, year: int, connection | register_sites: list — list of dicts, one per site, each containing site_reference, utm_x, utm_y | Queries brownfield_sites table for all register sites matching the given GSS code and year. Returns site locations in UTM coordinates ready for comparison against candidate sites from the clustering module |
+| store_candidate_sites | candidate_sites: list, gss_code: str, image_date: str, run_timestamp: str, connection | None — writes to candidate_sites table | Stores candidate brownfield sites identified by the clustering module into the candidate_sites table. Each site record includes GSS code, image date, run timestamp, UTM coordinates, pixel count, BSI value and register match status |
+| store_pipeline_metadata | gss_code: str, image_date: str, run_timestamp: str, status: str, candidate_sites_found: int, matched_to_register: int, unmatched: int, connection | None — writes to pipeline_runs table | Stores pipeline run metadata into the pipeline_runs table after each completed run. Records council, image date, timestamp, success or failure status, and counts of candidate sites found, matched and unmatched against the brownfield register |
+
+### Module: validation_database.py — Database Input Validation
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| validate_council_boundary_gss | gss_code: str, connection | bool | Validates GSS code format (9 characters, correct prefix) and confirms it exists in the council_boundaries table. Raises ValueError if format is invalid or GSS code is not found in database |
+| brownfield_data_validation | gss_code: str, year: int, connection | bool | Confirms that brownfield register data exists in the brownfield_sites table for the given GSS code and year combination. Raises ValueError if no matching records are found — prevents pipeline running against missing register data |
+| store_candidate_sites_validation | candidate_sites: list | bool | Validates candidate site data before database insertion — checks UTM coordinates are within valid range, pixel counts are positive, and BSI values fall within the expected range of -1 to 1. Raises ValueError if any site fails validation |
+| store_pipeline_metadata_validation | gss_code: str, image_date: str, status: str, candidate_sites_found: int, matched_to_register: int, unmatched: int | bool | Validates pipeline run metadata before database insertion — checks status is a valid value (success or failure), all counts are non-negative integers, and image_date is correctly formatted. Raises ValueError if any field fails validation |
+
+### Module: api_copernicus.py — Copernicus API Authentication and SAFE File Download
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| get_access_token | username: str, password: str | token: str | Authenticates with the Copernicus Data Space Ecosystem using Keycloak token endpoint at https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token. Returns access token required for all subsequent API calls. Credentials loaded from .env file — never hardcoded. Raises ValueError if authentication fails |
+| search_products | gss_code: str, date: str, cloud_threshold: float = 0.10, token: str | products: list — list of dicts, each containing product_id, product_name, cloud_cover, sensing_date | Queries Copernicus OData catalogue for Sentinel-2 L2A products matching the council area (retrieved from database by GSS code), date and cloud cover threshold. Returns list of matching products ordered by cloud cover ascending — lowest cloud cover first. Raises ValueError if no products found for given parameters |
+| download_safe | product_id: str, product_name: str, token: str, output_dir: str | safe_path: str — full path to extracted SAFE folder | Downloads SAFE file zip for the given product ID using the Copernicus OData download endpoint, extracts to output_dir and returns the path to the extracted SAFE folder. Raises ValueError if download fails or extracted SAFE folder is missing expected structure |
 
 
-### Module: visualise.py — False Colour Map and Results Report
+### Module: visualise.py — False Colour Map, Results Report and Interactive Map
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | convert_k_to_rgb | X_reduced: np.ndarray (pixels, k) | rgb_array: np.ndarray (pixels, 3) | Takes top 3 principal components and normalises to 0-255 range for RGB colour channels. Raises ValueError if fewer than 3 components, empty array, or a component has zero variance |
 | false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str, mask: np.ndarray = None, original_shape: tuple = None | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Reconstructs the full 2D image by placing valid pixels back into their original positions using mask and original_shape, with masked-out pixels rendered as black. If mask or original_shape is None, falls back to assuming a square image (Version 1 limitation for use without nodata masking). Renders RGB array as false colour map using matplotlib and saves with timestamped filename to outputs/ |
 | report_creation | k: int, sorted_eigenvalues: np.ndarray (10,), output_dir: str | None — saves results_report_YYYYMMDD_HHMMSS.md to outputs/ | Generates plain English results report for planning officials including variance explained and brownfield candidate findings — saves with timestamped filename to outputs/ |
+| create_interactive_map | candidate_sites: list, output_dir: str, gss_code: str | None — saves interactive_map_YYYYMMDD_HHMMSS.html to outputs/ | Creates interactive Folium map with OpenStreetMap base layer. Plots candidate sites as markers — green for register-matched sites, red for potential unregistered brownfield. Clickable popups show site reference, pixel count, BSI value and register match status. Saves as standalone HTML file viewable in any browser |
 
 ### Module: main.py — Pipeline Orchestration
 
@@ -257,6 +279,7 @@ The database setup scripts must successfully load all 358 UK council boundaries 
 | v2 | Pixel clustering | Groups spectrally similar neighbouring pixels into discrete candidate sites — enables register comparison at site level rather than individual pixel level |
 | v2 | Brownfield register validation | Cross-reference candidate sites against brownfield register stored in database — identifies overlap between PCA candidates and known registered sites, highlights potential unregistered sites |
 | v2 | Change detection | Compare brownfield register across years using SQL queries — identifies sites added or removed between annual registers. Supports annual brownfield register update process |
+| v2 | Interactive map output | Candidate sites overlaid onto OpenStreetMap base layer using Folium — outputs standalone HTML file to outputs/ alongside existing false colour map and results report. Green markers indicate register-matched sites, red markers indicate potential unregistered brownfield. Clickable popups show site reference, pixel count, BSI value and register match status |
 | v3 | Streamlit web interface | Planning officials access via browser — no command line required — trigger pipeline by selecting council and date, receive map and report |
 | v3 | Automated brownfield register download | Annual register downloaded automatically from data.gov.uk when new version is published — removes manual update requirement |
 | v3 | Database migration to Supabase | Local PostgreSQL migrated to hosted Supabase instance — enables multi-user access and web interface integration |
@@ -283,3 +306,4 @@ The database setup scripts must successfully load all 358 UK council boundaries 
 - Module naming convention established in Version 2 — data source prefix (data_loading_, validation_) ensures clarity as pipeline grows to handle multiple data sources
 - Copernicus API introduced in Version 2 — automated SAFE download replaces manual process — credentials stored in .env file excluded from version control
 - Contaminated land register deferred to Version 4 — current source is PDF format requiring manual processing before machine-readable extraction is possible
+- Interactive map output uses Folium with OpenStreetMap — free, no API key required, outputs standalone HTML file compatible with any browser — upgrade path to Google Maps available in Version 3 via Streamlit-Folium integration
