@@ -6,7 +6,13 @@
 
 ## 1. Requirements
 
-This system is for the Stoke-on-Trent city council planning authority to help identify potential brownfield sites for further exploration. The system takes in raw data from the Copernicus Data Space Ecosystem, the satellite Sentinel-2 L2A carries a Multispectral Instrument (MSI) with 13 spectral bands. The data files input into the system are  Sentinel-2 L2A SAFE folder containing JP2 band files at 10m, 20m and 60m resolution. The bands used to investigate potential brownfield sites are bands 02, 03, 04, 05, 06, 07, 08, 8A, 11 and 12, these bands will be processed at 20m, the 10m bands will be down sampled to 20m. The system uses PCA spectral analysis to identify brownfield spectral signatures and outputs a report for the user. The report uses a false colour map and a results report to highlight candidate brownfield sites.  The scope of the system is for candidate identification purposes and will need follow up investigation. Version 2 looks to expand the system with geographic validation, Bare Soil Index preprocessing and change detection.
+This system is for UK local authority planning departments to help identify potential brownfield sites for further exploration. Initially developed for Stoke-on-Trent City Council, the system is designed to be configurable by GSS code, allowing any UK council to be processed without code changes from Version 2 onwards.
+
+The system takes in raw data from the Copernicus Data Space Ecosystem. The Sentinel-2 L2A satellite carries a Multispectral Instrument (MSI) with 13 spectral bands. The data files input into the system are Sentinel-2 L2A SAFE folders containing JP2 band files at 10m, 20m and 60m resolution. In Version 2 these are downloaded automatically via the Copernicus API using GSS code and date as inputs. The bands used to investigate potential brownfield sites are bands 02, 03, 04, 05, 06, 07, 08, 8A, 11 and 12, processed at 20m resolution with 10m bands downsampled to 20m.
+
+The system uses Bare Soil Index preprocessing and PCA spectral analysis to identify brownfield spectral signatures. Candidate sites are identified through pixel clustering and cross-referenced against the brownfield register stored in a PostgreSQL PostGIS database. The system outputs a false colour map, a results report, and stores candidate sites in the database for comparison against future pipeline runs.
+
+The scope of the system is for candidate identification purposes and all outputs require follow-up investigation by planning officials before any planning decision is made.
 
 **Version 1 Reproducibility Constraint:**
 Version 1 is designed to produce reproducible results using a single specific Sentinel-2 image:
@@ -17,36 +23,52 @@ Version 1 is designed to produce reproducible results using a single specific Se
 
 Results are only guaranteed to be reproducible when using this exact image. Any other image — different date, different AOI, different tile — may produce different results. Users who wish to reproduce the results documented in this project must download the exact product listed above following the instructions in raw_data/README.md.
 
-Generalisation to other images and locations is a Version 2 objective.
+Generalisation to other images and locations is a Version 2 objective, achieved through GSS code parameterisation and the Copernicus API download module.
 
 ## 2. Problem Formulation
 
-The system loads 10 spectral bands at 20m resolution and stacks them into a matrix where each row is a pixel and each column is a band. Before any analysis the data is centred by subtracting the mean of each band — this removes overall brightness differences between bands and ensures the covariance matrix measures variation not position. The system then computes the covariance matrix using the formula  $\Sigma = (1/n)X^TX$ , transposing the matrix onto itself creating a symmetric matrix.
+In Version 2, the system first computes the Bare Soil Index (BSI) for each pixel using the formula BSI = ((B11+B04)-(B08+B02))/((B11+B04)+(B08+B02)). This pre-filters the pixel array to focus PCA analysis on spectrally relevant pixels, reducing noise from vegetation and urban surfaces before decomposition begins.
+
+The system loads 10 spectral bands at 20m resolution and stacks them into a matrix where each row is a pixel and each column is a band. Before any analysis the data is centred by subtracting the mean of each band — this removes overall brightness differences between bands and ensures the covariance matrix measures variation not position. The system then computes the covariance matrix using the formula $\Sigma = (1/n)X^TX$, transposing the matrix onto itself creating a symmetric matrix.
 
 The covariance matrix is then decomposed using the Spectral Theorem — $\Sigma = Q\Lambda Q^T$ — where Q contains the eigenvectors as columns and $\Lambda$ contains the eigenvalues on the diagonal. This is computed using numpy.linalg.eigh which is optimised for symmetric matrices and guarantees real eigenvalues and perpendicular eigenvectors. Each eigenvector represents a direction of spectral variation in the data and each eigenvalue represents how much variation exists in that direction.
 
-Eigenvalues are then sorted by variance, this is so we can check which features have the biggest impact on the variation. The formula for each components variance is $\lambda_i / (\lambda_1 + \lambda_2 + \cdots + \lambda_n)$ the system will retain components that cumulatively explain 95% of variance. This threshold will be validated during implementation and adjusted if fewer or more components are needed to clearly distinguish brownfield spectral signatures. The chosen k is the point we meet the threshold. The data is then projected onto the top k eigenvectors using $X_{\text{reduced}} = X_{\text{centred}} \cdot Q[:,:k]$ - this transforms the original 10 band pixel matrix into a reduced representation capturing the most important spectral variation.
+Eigenvalues are then sorted by variance, this is so we can check which features have the biggest impact on the variation. The formula for each components variance is $\lambda_i / (\lambda_1 + \lambda_2 + \cdots + \lambda_n)$ the system will retain components that cumulatively explain 95% of variance. This threshold will be validated during implementation and adjusted if fewer or more components are needed to clearly distinguish brownfield spectral signatures. The chosen k is the point we meet the threshold. The data is then projected onto the top k eigenvectors using $X_{\text{reduced}} = X_{\text{centred}} \cdot Q[:,:k]$ — this transforms the original 10 band pixel matrix into a reduced representation capturing the most important spectral variation.
 
-The system then normalises the first 3 principal components to the range of 0-255 and assigns them to the 3 colour channels of an image. The false colour map always uses the top 3 principal components regardless of k - as colour image has exactly 3 channels. Where k exceeds 3, the additional components contribute to the analysis but are not directly visualised. Matplotlib takes these 3 channels and renders them as a colour image. Pixels with similar spectral signatures get similar colours. Brownfield land will cluster into a similar colour, vegetation in to another, and urban fabric into another.
+In Version 2, the projected pixel values are passed to the clustering module which groups neighbouring pixels with similar spectral signatures into discrete candidate sites. Each candidate site is assigned a pixel count, mean BSI value, and location. These candidate sites are then cross-referenced against the brownfield register stored in the PostgreSQL database using coordinate comparison to identify which candidates match known registered sites and which represent potential unregistered brownfield land.
+
+The system then normalises the first 3 principal components to the range of 0-255 and assigns them to the 3 colour channels of an image. The false colour map always uses the top 3 principal components regardless of k — as a colour image has exactly 3 channels. Where k exceeds 3, the additional components contribute to the analysis but are not directly visualised. Matplotlib takes these 3 channels and renders them as a colour image. Pixels with similar spectral signatures get similar colours. Brownfield land will cluster into a similar colour, vegetation into another, and urban fabric into another.
 
 ## 3. Architecture
 ### Project Structure
 ```
 sentinel2-brownfield-stoke/
 ├── src/
-│   ├── data.py          — Load and prepare band data
-│   ├── scl_filtering.py — Removes pixels based on SCL class
-│   ├── validation.py    — All quality checks
-│   ├── preprocess.py    — Centre data and build covariance matrix
-│   ├── pca.py           — Spectral decomposition, choose k, project
-│   ├── visualise.py     — False colour map and results report
-│   └── main.py          — Pipeline orchestration
+│   ├── data_loading_satellite.py  — Load and prepare Sentinel-2 band data
+│   ├── scl_filtering.py           — Removes pixels based on SCL class
+│   ├── validation_satellite.py    — Satellite image quality checks
+│   ├── preprocess.py              — Centre data, build covariance matrix, compute BSI
+│   ├── pca.py                     — Spectral decomposition, choose k, project
+│   ├── coordinate_conversion_pixel.py — Converts external coordinates to UTM and pixel positions
+│   ├── clustering.py              — Groups spectrally similar pixels into candidate sites
+│   ├── database_query.py          — Runtime database queries and candidate site storage
+│   ├── api_copernicus.py          — Copernicus API authentication and SAFE file download
+│   ├── visualise.py               — False colour map and results report
+│   └── main.py                    — Pipeline orchestration
+├── scripts/
+│   ├── setup_boundaries.py        — One-time load of UK council boundaries into database
+│   └── setup_brownfield.py        — Annual load of brownfield register into database
 ├── tests/
 │   ├── __init__.py
-│   ├── test_data.py
-│   ├── test_validation.py
+│   ├── test_data_loading_satellite.py
+│   ├── test_validation_satellite.py
+│   ├── test_scl_filtering.py
 │   ├── test_preprocess.py
 │   ├── test_pca.py
+│   ├── test_coordinate_conversion_pixel.py
+│   ├── test_clustering.py
+│   ├── test_database_query.py
+│   ├── test_api_copernicus.py
 │   ├── test_visualise.py
 │   └── test_main.py
 ├── notebooks/
@@ -66,11 +88,13 @@ sentinel2-brownfield-stoke/
 │   └── uk_local_authority_boundaries.geojson
 ├── docs/
 │   └── images/
-│       └── false_colour_map.png
+│       ├── false_colour_map.png
+│       └── database_erd.png
 ├── outputs/              — Generated false colour maps and results reports, gitignored except folder structure
-├── raw_data/            — Sentinel-2 satellite imagery — not committed to GitHub
+├── raw_data/             — Sentinel-2 satellite imagery — not committed to GitHub
 │   ├── README.md
 │   └── S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE/  — see README.md to download
+├── DATABASE.md
 ├── DESIGN.md
 ├── EDA.md
 ├── README.md
@@ -78,19 +102,35 @@ sentinel2-brownfield-stoke/
 ```
 ### Pipeline Flow
 
+**Pipeline Flow 1 — Main Satellite Pipeline**
 ```mermaid
-graph LR
-    A[Raw SAFE Folder] --> B[validate_path]
-    B --> C[load_bands + load_scl]
+graph TD
+    A[GSS Code + Date Input] --> B[api_copernicus.py: download_safe]
+    B --> C[data_loading_satellite.py: load_bands + load_scl]
     C --> D[scl_filtering.py: mask_nodata]
-    D --> E[validate_bands + validate_quality]
-    E --> F[preprocess.py]
-    F --> G[pca.py]
-    G --> H[visualise.py]
-    H --> I[outputs/]
+    D --> E[validation_satellite.py: validate_bands + validate_quality]
+    E --> F[preprocess.py: compute_bsi]
+    F --> G[preprocess.py: centre_data + compute_covariance]
+    G --> H[pca.py]
+    H --> I[clustering.py]
+    I --> J[database_query.py: store_candidate_sites]
+    J --> K[database_query.py: match_against_register]
+    K --> L[visualise.py]
+    L --> M[outputs/]
 ```
 
-### Module: data.py — Load and Prepare Band Data
+**Pipeline Flow 2 — Annual Setup Process**
+
+```mermaid
+graph TD
+    A[UK Boundary GeoJSON] --> B[scripts/setup_boundaries.py]
+    B --> C[(council_boundaries table)]
+    D[Brownfield Register File] --> E[scripts/setup_brownfield.py]
+    E --> F[coordinate_conversion_pixel.py: convert_bng_to_utm]
+    F --> G[(brownfield_sites table)]
+```
+
+### Module: data_loading_satellite.py — Load and Prepare Band Data
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
@@ -105,7 +145,7 @@ graph LR
 |---|---|---|---|
 | mask_nodata | band_array: np.ndarray, scl_array: np.ndarray = None | tuple — (np.ndarray (valid_pixels, 10), np.ndarray or None (pixels,), tuple or None) | Removes pixels where SCL class = 0 (nodata) or SCL class = 1 (defective/saturated). Returns the filtered array, the boolean mask used, and the original 2D shape — needed by false_map_creation to reconstruct the image. If scl_array is None, masking is skipped and mask/original_shape are returned as None |
 
-### Module: validation.py - All Quality Checks
+### Module: validation_satellite.py - All Quality Checks
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | validate_path | safe_path: str | safe_path: str | Validates SAFE folder exists, raises FileNotFoundError if not |
@@ -129,12 +169,30 @@ graph LR
 | cumulative_variance_for_k | sorted_eigenvalues: np.ndarray (10, ), variance_threshold: float = 0.95  | k: int | Calculates cumulative variance explained, returns k components needed to reach variance_threshold |
 | project | centred_array: np.ndarray (pixels, 10), eigenvectors: np.ndarray (10, 10), k: int | X_reduced: np.ndarray (pixels, k) | Projects centred data onto top k eigenvectors using $X_{\text{reduced}} = X_{\text{centred}} \cdot Q[:,:k]$ |
 
-### Module: coordinate_conversion_pixel.py - Converts External Coordinates to UTM and Pixel Positions
+### Module: coordinate_conversion_pixel.py — Converts External Coordinates to UTM and Pixel Positions
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | convert_bng_to_utm | x: float, y: float | utm_position: dict | Converts a coordinate from EPSG:27700 (British National Grid) into EPSG:32630 (UTM Zone 30N) using pyproj.Transformer, matching the conversion already tested in 02_brownfield_register_eda.ipynb. utm_position contains the converted x and y values, ready to be passed into utm_coordinate_to_pixel |
 | utm_coordinate_to_pixel | x: float, y: float, tile_metadata: dict | pixel_position: dict | Converts a UTM coordinate into a pixel position using column = int((x-left)/resolution) and row = int((top-y)/resolution) — tile_metadata supplies left, top and resolution from the satellite image. Used by register validation and AOI clipping to locate specific coordinates within the pixel grid |
+
+### Module: clustering.py — Groups spectrally similar pixels into candidate sites
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+
+
+### Module: database_query.py — Runtime database queries and candidate site  sites
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+
+
+### Module: api_copernicus.py — Copernicus API authentication and SAFE file
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+
 
 ### Module: visualise.py — False Colour Map and Results Report
 
@@ -148,21 +206,23 @@ graph LR
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| run_pipeline | safe_path: str, output_dir: str | None — saves outputs to outputs/ folder | Orchestrates the full pipeline — calls validate_path, load_bands, load_scl, mask_nodata, validate_bands, validate_quality, centre_data, compute_covariance, spectral_decomposition, sort_variance, cumulative_variance_for_k, project (k components, for variance report), project (3 components, for RGB map), convert_k_to_rgb, false_map_creation, report_creation in sequence |
+| run_pipeline | gss_code: str, date: str, output_dir: str | None — saves outputs to outputs/ folder and stores candidate sites in database | Orchestrates the full Version 2 pipeline — calls api_copernicus download_safe, data_loading_satellite load_bands and load_scl, scl_filtering mask_nodata, validation_satellite validate_bands and validate_quality, preprocess compute_bsi, preprocess centre_data and compute_covariance, spectral_decomposition, sort_variance, cumulative_variance_for_k, project (k components for variance report), project (3 components for RGB map), clustering, database_query store_candidate_sites, database_query match_against_register, convert_k_to_rgb, false_map_creation, report_creation in sequence |
 
 ## 4. Risks
 
 The system carries several risks that planning officials and future developers should be aware of.
 
-The most significant risk is that the system has no geographic validation in Version 1. It will process any valid Sentinel-2 L2A SAFE folder regardless of location. A user who downloads an image covering the wrong area will receive a false colour map and report with no warning that the results are not relevant to Stoke-on-Trent. To mitigate this in Version 1 the correct download instructions are documented in raw_data/README.md. Geographic validation and AOI clipping will be added in Version 2. This is a known Version 1 constraint — the system is designed to reproduce results from a single specific image documented in Section 1. Generalisation to other images is a Version 2 objective.
+The most significant risk in Version 1 was that the system had no geographic validation. It would process any valid Sentinel-2 L2A SAFE folder regardless of location. This has been addressed in Version 2 through AOI clipping using council boundary data stored in the PostgreSQL database, ensuring the pipeline only processes imagery relevant to the selected council area identified by GSS code.
 
 Seasonal variation presents a second risk. The system was developed and tested using a May 2026 summer image captured during a heatwave with minimal cloud cover. Spectral signatures change significantly between seasons — winter imagery may contain snow or ice which has a similar spectral signature to bare soil and could be misclassified as brownfield land. Wet soils in autumn and winter also produce different spectral responses. Users should download summer imagery where possible and be cautious interpreting results from winter images.
 
-The system may also experience spectral confusion between land cover types. Two different surfaces with similar spectral signatures in the selected bands may cluster together in the PCA and appear as the same colour on the false colour map. For example brownfield bare soil and agricultural bare soil may be indistinguishable. This is a fundamental limitation of unsupervised PCA — the system identifies spectral variation but cannot label land cover types with certainty. All outputs should be treated as candidate sites requiring physical verification.
+The system may also experience spectral confusion between land cover types. Two different surfaces with similar spectral signatures in the selected bands may cluster together in the PCA and appear as the same colour on the false colour map. For example brownfield bare soil and agricultural bare soil may be indistinguishable. This is a fundamental limitation of unsupervised PCA — the system identifies spectral variation but cannot label land cover types with certainty. All outputs should be treated as candidate sites requiring physical verification. The Bare Soil Index preprocessing introduced in Version 2 partially mitigates this risk by filtering non-bare-soil pixels before PCA runs, but physical verification remains essential.
 
-Brownfield sites in Stoke-on-Trent may be contaminated with heavy metals, coal tar or asbestos from former pottery, mining and steelworks industries. The system cannot distinguish between clean brownfield and contaminated brownfield — both produce similar spectral signatures. Candidate sites identified by this tool must be cross-referenced against the Environment Agency contaminated land register before any planning decision is made.
+Brownfield sites in Stoke-on-Trent may be contaminated with heavy metals, coal tar or asbestos from former pottery, mining and steelworks industries. The system cannot distinguish between clean brownfield and contaminated brownfield — both produce similar spectral signatures. Candidate sites identified by this tool must be cross-referenced against the Environment Agency contaminated land register before any planning decision is made. Integration of contaminated land data is deferred to Version 4.
 
-Missing or corrupted band files present a technical risk. If the downloaded SAFE folder is missing any of the 10 required bands the pipeline will raise a ValueError from validate_bands before processing begins. Users should ensure the complete SAFE folder has been downloaded and extracted correctly.
+Missing or corrupted band files present a technical risk. If the downloaded SAFE folder is missing any of the 10 required bands the pipeline will raise a ValueError from validation_satellite.py before processing begins. In Version 2 the Copernicus API download introduced in api_copernicus.py reduces this risk by ensuring complete SAFE folders are downloaded automatically rather than relying on manual downloads.
+
+The brownfield register coordinate system presents a data quality risk. The register does not explicitly state its coordinate reference system. Based on the numeric range of GeoX and GeoY values and cross-referencing against known site locations, the system infers EPSG:27700 (British National Grid). This inference is documented in 02_brownfield_register_eda.ipynb. If the coordinate system assumption is incorrect, all register site locations will be wrong after conversion. This risk is partially mitigated by the cross-validation performed during EDA, but cannot be fully eliminated without explicit metadata from the data publisher.
 
 Finally the system was developed and validated against a single image. Results on different dates, different atmospheric conditions, or different seasonal contexts have not been tested. The 95% variance threshold and band selection were chosen based on this single image and may require adjustment for other dates or conditions.
 
@@ -172,40 +232,54 @@ The pipeline is considered successful when all of the following conditions are m
 
 The outputs folder contains two timestamped files after a successful run — a false colour map saved as false_colour_map_YYYYMMDD_HHMMSS.png and a results report saved as results_report_YYYYMMDD_HHMMSS.md. If either file is missing the pipeline has not completed successfully.
 
-The PCA pipeline is considered correct when all unit tests pass. Each of the six modules has at least one test per function — a minimum of 60 tests covering data loading, validation, preprocessing, decomposition, projection and visualisation. Edge cases including missing bands, corrupt arrays and excessive cloud cover must also be tested. The full test suite must pass with zero failures before the pipeline is considered production ready.
+The PCA pipeline is considered correct when all unit tests pass. Each module has at least one test per function — a minimum of 79 tests covering data loading, satellite validation, SCL filtering, preprocessing, PCA decomposition, coordinate conversion, visualisation and database queries. Edge cases including missing bands, corrupt arrays, excessive cloud cover, invalid coordinates and database connection failures must also be tested. The full test suite must pass with zero failures before the pipeline is considered production ready.
 
 The false colour map is considered useful when it visually distinguishes at least three land cover types — brownfield bare soil, vegetation and urban fabric — as clearly different colours. Water bodies such as the River Trent should also appear as a distinct colour. The map should be interpretable by a planning official without data science knowledge.
 
-The results report is considered complete when it contains the number of principal components retained, the variance explained by each component, and a plain English summary of the findings suitable for a non-technical planning official.
+The results report is considered complete when it contains the number of principal components retained, the variance explained by each component, a list of candidate brownfield sites identified by the clustering module, their match status against the brownfield register, and a plain English summary of the findings suitable for a non-technical planning official.
 
-All pipeline runs must complete within a reasonable time — target under 5 minutes on a standard laptop for the full Stoke-on-Trent dataset.
+All pipeline runs must complete within a reasonable time — target under 5 minutes on a standard laptop for the full Stoke-on-Trent dataset, excluding the initial Copernicus API download time.
 
-Candidate sites identified by the false colour map should be cross-referenced against the brownfield register files in data/ (brownfield_register_2024.csv being the current register) to identify overlap with known registered sites and highlight potential unregistered brownfield land.
+Candidate sites identified by the pipeline are stored in the candidate_sites table in the PostgreSQL database and automatically cross-referenced against the brownfield_sites table. The results report identifies which candidate sites match known registered sites and highlights potential unregistered brownfield land for further investigation by planning officials.
+
+The database setup scripts must successfully load all 358 UK council boundaries into the council_boundaries table and all available years of Stoke-on-Trent brownfield register data into the brownfield_sites table before the pipeline can be considered fully operational.
 
 ## 6. Future Versions
 
 | Version | Enhancement | Notes |
 |---|---|---|
-| v2 | Geographic validation and AOI clipping | System clips any downloaded image to a fixed Stoke-on-Trent bounding box — results consistent regardless of user AOI |
+| v2 | PostgreSQL + PostGIS database | Central database replacing file-based workflow — stores council boundaries, brownfield register data, candidate sites and pipeline run history. Enables spatial queries natively without Shapely |
+| v2 | Copernicus API download | Automated SAFE file download from Copernicus Data Space Ecosystem using GSS code and date as inputs — replaces manual download process |
+| v2 | GSS code parameterisation | Pipeline accepts GSS code as input rather than hardcoded Stoke-on-Trent — enables any UK council to be processed without code changes |
+| v2 | Module restructure | data.py renamed to data_loading_satellite.py, validation.py renamed to validation_satellite.py — establishes consistent naming convention for multi-source data pipeline |
+| v2 | Geographic validation and AOI clipping | Pipeline clips satellite imagery to council boundary retrieved from database by GSS code — results consistent regardless of SAFE file coverage area |
 | v2 | Bare Soil Index preprocessing | Calculate BSI prior to PCA — filters obvious non-brownfield pixels, provides independent validation of PCA results. BSI threshold must be calibrated for Stoke-on-Trent soil conditions and validated against the council brownfield register |
-| v2 | Brownfield register validation | Cross-reference candidate sites against Stoke-on-Trent brownfield register coordinates — identifies overlap between PCA candidates and known registered sites, highlights potential unregistered sites |
-| v2 | Change detection | Compare two Sentinel-2 images from different dates — identifies newly appearing brownfield sites and sites that have been developed since previous analysis. Supports annual brownfield register update process |
-| v3 | Streamlit web interface | Planning officials access via browser — no command line required — upload or trigger download, receive map and report |
+| v2 | Pixel clustering | Groups spectrally similar neighbouring pixels into discrete candidate sites — enables register comparison at site level rather than individual pixel level |
+| v2 | Brownfield register validation | Cross-reference candidate sites against brownfield register stored in database — identifies overlap between PCA candidates and known registered sites, highlights potential unregistered sites |
+| v2 | Change detection | Compare brownfield register across years using SQL queries — identifies sites added or removed between annual registers. Supports annual brownfield register update process |
+| v3 | Streamlit web interface | Planning officials access via browser — no command line required — trigger pipeline by selecting council and date, receive map and report |
+| v3 | Automated brownfield register download | Annual register downloaded automatically from data.gov.uk when new version is published — removes manual update requirement |
+| v3 | Database migration to Supabase | Local PostgreSQL migrated to hosted Supabase instance — enables multi-user access and web interface integration |
 | v3 | Supervised classification using brownfield register | Train Random Forest or SVM on Stoke-on-Trent brownfield register coordinates as ground truth labels — moves from candidate identification to validated probabilistic classification |
-| v3 | Contamination filtering | Cross-reference candidate sites against Environment Agency contaminated land register — exclude known contaminated sites. Explore supervised detection of contamination spectral signatures using Sentinel-2 SWIR bands |
 | v3 | Temporal spectral training data | Extract spectral signatures from historical Sentinel-2 images of known brownfield sites before development — creates verified before/after training pairs. Improves supervised classifier accuracy by distinguishing active brownfield from developed former brownfield |
-| v4 | Multi-city expansion | Generalise pipeline to other UK cities using automated Copernicus API download — BSI thresholds and classifier retrained per city using local brownfield register data |
+| v4 | Multi-city expansion | Generalise pipeline to all UK councils using GSS code system already established in Version 2 — BSI thresholds and classifier retrained per council using local brownfield register data |
+| v4 | Contaminated land integration | Integrate Environment Agency contaminated land register — cross-reference candidate sites against known contaminated locations. Requires assessment of PDF data source for machine-readable extraction |
+| v4 | Automated scheduling | Pipeline runs automatically on new Copernicus image availability — no manual triggering required |
 
 ### Design Decisions for Future Versions
 
 - validate_bands uses dynamic shape checking — not hardcoded to 10 bands — supports different band selections in future versions and multi-city expansion
 - validate_quality cloud_threshold is configurable — default 0.10 — overridable for different seasonal conditions and geographic regions
 - cumulative_variance_for_k variance_threshold is configurable — default 0.95 — may require adjustment for different cities or seasonal imagery
-- validation.py is a separate module — new quality checks can be added without touching data.py — designed for extensibility
+- validation_satellite.py is a separate module — new satellite quality checks can be added without touching data_loading_satellite.py — designed for extensibility
 - mask_nodata scl_array is optional — defaults to None — supports future versions where SCL may not be available or where a different masking approach is used
-- load_scl is specific to Sentinel-2 L2A — future versions supporting other satellite products or other cities will require a different masking approach
-- Output files are timestamped — prevents overwriting on multiple runs — essential for change detection in Version 2 where multiple dated images will be compared
-- Geographic validation removed from Version 1 — validate_aoi will be implemented in Version 2 using verified ONS boundary data for Stoke-on-Trent
-- BSI threshold calibration deferred to Version 2 — requires validation against Stoke-on-Trent specific soil conditions and council brownfield register
+- load_scl is specific to Sentinel-2 L2A — future versions supporting other satellite products will require a different masking approach
+- Output files are timestamped — prevents overwriting on multiple runs — essential for change detection where multiple dated images are compared
+- Geographic validation removed from Version 1 — AOI clipping implemented in Version 2 using council boundary data retrieved from PostgreSQL database by GSS code
+- BSI threshold calibration deferred — requires validation against Stoke-on-Trent specific soil conditions and council brownfield register before integration into pipeline
 - Temporal analysis deferred to Version 3 — requires historical Sentinel-2 imagery pipeline and before/after training pair extraction
-- Multi-city expansion deferred to Version 4 — requires per-city BSI calibration, classifier retraining and automated API download
+- Multi-city expansion supported from Version 2 — GSS code parameterisation allows any UK council to be processed — per-city BSI calibration and classifier retraining addressed in Version 4
+- Database introduced in Version 2 — PostgreSQL with PostGIS replaces file-based spatial data handling — schema designed for extensibility to additional councils and data sources
+- Module naming convention established in Version 2 — data source prefix (data_loading_, validation_) ensures clarity as pipeline grows to handle multiple data sources
+- Copernicus API introduced in Version 2 — automated SAFE download replaces manual process — credentials stored in .env file excluded from version control
+- Contaminated land register deferred to Version 4 — current source is PDF format requiring manual processing before machine-readable extraction is possible
