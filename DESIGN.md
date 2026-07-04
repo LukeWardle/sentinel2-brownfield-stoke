@@ -112,18 +112,18 @@ graph TD
     B --> C[data_loading_satellite.py: load_bands + load_scl]
     C --> D[scl_filtering.py: mask_nodata]
     D --> E[validation_satellite.py: validate_bands + validate_quality]
-    E --> F[preprocess.py: compute_bsi]
-    F --> G[preprocess.py: centre_data + compute_covariance]
-    G --> H[pca.py]
-    H --> I[clustering.py]
-    I --> J[database_query.py: store_candidate_sites]
-    J --> K[database_query.py: match_against_register]
-    K --> L[visualise.py]
-    L --> M[outputs/]
+    E --> F[preprocess.py: normalise_band_array]
+    F --> G[preprocess.py: compute_bsi + compute_ndvi]
+    G --> H[preprocess.py: centre_data + compute_covariance]
+    H --> I[pca.py]
+    I --> J[clustering.py]
+    J --> K[database_query.py: store_candidate_sites]
+    K --> L[database_query.py: match_against_register]
+    L --> M[visualise.py]
+    M --> N[outputs/]
 ```
 
 **Pipeline Flow 2 — Annual Setup Process**
-
 ```mermaid
 graph TD
     A[UK Boundary GeoJSON] --> B[scripts/setup_boundaries.py]
@@ -155,13 +155,15 @@ graph TD
 | validate_bands | band_array: np.ndarray | bool | Checks array is 2D, number of columns matches bands selected, no negative values, no corrupt rows — raises ValueError if invalid |
 | validate_quality | scl_array: np.ndarray, cloud_threshold: float = 0.10 | bool | Checks cloud cover does not exceed threshold - raises ValueError if image quality insufficient |
 
-### Module: preprocess.py — Centre Data and Build Covariance Matrix
+### Module: preprocess.py — Centre Data, Build Covariance Matrix and Compute Spectral Indices
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
+| normalise_band_array | band_array: np.ndarray (pixels, n_bands) | normalised_array: np.ndarray (pixels, n_bands) | Converts raw Sentinel-2 digital number values to surface reflectance by dividing by 10,000. Must be applied before computing BSI or NDVI. Returns float64 array |
 | centre_data | band_array: np.ndarray (pixels, 10) | centred_array: np.ndarray (pixels, 10) | Subtracts column mean from each band - centres data around zero |
 | compute_covariance | centred_array: np.ndarray (pixels, 10) | covariance_matrix: np.ndarray (10, 10) | Computes $\Sigma = (1/n)X^TX$ — produces symmetric matrix for spectral decomposition |
-| compute_bsi | band_array: np.ndarray (pixels, 10), bands_20m: list of band names for 20m, bands_10m: list of band names for 10m | bsi_array: np.ndarray (pixels,) | Computes Bare Soil Index using BSI = ((B11+B04)-(B08+B02))/((B11+B04)+(B08+B02)) — uses bands_20m and bands_10m combined with .index() to locate each band's column in band_array. Produces one BSI value per pixel, used to pre-filter likely bare soil pixels before PCA |
+| compute_bsi | band_array: np.ndarray (pixels, 10), bands_20m: list, bands_10m: list | bsi_array: np.ndarray (pixels,) | Computes Bare Soil Index using BSI = ((B11+B04)-(B08+B02))/((B11+B04)+(B08+B02)) — uses bands_20m and bands_10m combined with .index() to locate each band's column in band_array. Produces one BSI value per pixel |
+| compute_ndvi | band_array: np.ndarray (pixels, 10), bands_20m: list, bands_10m: list | ndvi_array: np.ndarray (pixels,) | Computes Normalised Difference Vegetation Index using NDVI = (B08-B04)/(B08+B04) — uses bands_20m and bands_10m combined with .index() to locate each band's column in band_array. Produces one NDVI value per pixel |
 
 ### Module: pca.py — Spectral Decomposition, Choose k, Project
 

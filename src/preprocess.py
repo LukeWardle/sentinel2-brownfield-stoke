@@ -56,6 +56,22 @@ def compute_covariance(centred_array: np.ndarray) -> np.ndarray:
     covariance_matrix = (1/centred_array.shape[0]) * (centred_array.T @ centred_array)
     return covariance_matrix
 
+def normalise_band_array(band_array: np.ndarray) -> np.ndarray:
+    """
+    Normalises the band_array values, band_array values are raw digital numbers and dividing by 10,000
+    produces  reflectance values.
+
+    Args:
+        band_array (np.ndarray): shape (pixels, n_bands)
+    
+    Returns:
+        normalised_array (np.ndarray): Shape (pixels, n_bands) 
+                                       — band values converted to surface reflectance by 
+                                       dividing by 10,000.
+    """
+    normalised_array = band_array / 10000
+    return normalised_array
+
 def compute_bsi(band_array: np.ndarray, bands_20m: list, bands_10m: list) -> np.ndarray:
     """
     Computes Bare Soil Index using the formulation ((B11+B04)-(B08+B02))/((B11+B04)+(B08+B02))
