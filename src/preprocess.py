@@ -11,7 +11,7 @@ and B11.
 """
 
 import numpy as np
-from src.data import bands_20m, bands_10m
+from src.data_loading_satellite import bands_20m, bands_10m
 
 def centre_data(band_array: np.ndarray) -> np.ndarray:
     """

@@ -1,12 +1,12 @@
 """
-test_validation.py - Unit tests for module validation.py
+test_validation_satellite.py - Unit tests for module validation_satellite.py
 
 """
 
 import pytest
 import os
 import numpy as np
-from src.validation import validate_path, validate_bands, validate_quality
+from src.validation_satellite import validate_path, validate_bands, validate_quality
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent

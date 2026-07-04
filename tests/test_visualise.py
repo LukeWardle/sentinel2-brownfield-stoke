@@ -4,6 +4,8 @@ test_visualise.py - Unit tests for module visualise.py
 import pytest
 import numpy as np
 import os
+import matplotlib
+matplotlib.use('Agg')
 from src.visualise import convert_k_to_rgb, false_map_creation, report_creation
 
 

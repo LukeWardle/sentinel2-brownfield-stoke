@@ -1,13 +1,12 @@
 """
-test_data.py - Unit tests for module data.py
+test_data_loading_satellite.py - Unit tests for module data_loading_satellite.py
 
 """
 import pytest
 import os
 import numpy as np
 import rasterio
-from src.data import load_bands, load_scl
-from src.data import _arrange_band_array
+from src.data_loading_satellite import load_bands, load_scl, _arrange_band_array
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent

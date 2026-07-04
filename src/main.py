@@ -3,16 +3,16 @@ main.py - Orchestrates the full pipeline.
 =========================================
 Runs the full Sentinel-2 brownfield detection pipeline end to end — from
 loading a raw SAFE folder through to saving a false colour map and results
-report in outputs/. Calls every function from data.py, validation.py,
-preprocess.py, pca.py and visualise.py in the correct sequence.
+report in outputs/. Calls every function from data_loading_satellite.py,
+validation_satellite.py,
 """
 import sys
 import os
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.data import load_bands, load_scl
+from src.data_loading_satellite import load_bands, load_scl
 from src.scl_filtering import mask_nodata
-from src.validation import validate_path, validate_bands, validate_quality
+from src.validation_satellite import validate_path, validate_bands, validate_quality
 from src.preprocess import centre_data, compute_covariance
 from src.pca import spectral_decomposition, sort_variance, cumulative_variance_for_k, project
 from src.visualise import convert_k_to_rgb, false_map_creation, report_creation
