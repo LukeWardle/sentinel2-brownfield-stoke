@@ -4,7 +4,7 @@ test_preprocess.py - Unit tests for preprocess.py
 """
 import pytest
 import numpy as np
-from src.preprocess import centre_data, compute_covariance, compute_bsi
+from src.preprocess import centre_data, compute_covariance, compute_bsi, compute_ndvi
 
 # --- centre_data tests ---
 def test_centre_data_means_zero_after_centring():
@@ -131,4 +131,41 @@ def test_compute_bsi_correct_shape():
     bands_10m = ["B02", "B03", "B04", "B08"]
     band_array = np.ones((50, 10))
     result = compute_bsi(band_array, bands_20m, bands_10m)
+    assert result.shape == (50,)
+
+# --- compute_ndvi tests ---
+def test_compute_ndvi_correct_values():
+    """
+    Tests that compute_ndvi correctly calculates NDVI using known band values,
+    matching the formula ((B08-B04)/(B08+B04)).
+    """
+    bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
+    bands_10m = ["B02", "B03", "B04", "B08"]
+    band_array = np.zeros((2, 10))
+    bands_list = bands_20m + bands_10m
+    band_array[:, bands_list.index('B08')] = [10, 8]
+    band_array[:, bands_list.index('B04')] = [5, 3]
+    result = compute_ndvi(band_array, bands_20m, bands_10m)
+    expected = np.array([5/15, 5/11])
+    assert np.allclose(result, expected)
+
+def test_compute_ndvi_zero_denominator_returns_zero():
+    """
+    Tests that compute_ndvi returns 0 for a pixel where the denominator
+    would be zero, instead of raising a division error or returning inf/nan.
+    """
+    bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
+    bands_10m = ["B02", "B03", "B04", "B08"]
+    band_array = np.zeros((1, 10))
+    result = compute_ndvi(band_array, bands_20m, bands_10m)
+    assert result[0] == 0
+
+def test_compute_ndvi_correct_shape():
+    """
+    Tests that compute_bsi returns a 1D array with one BSI value per pixel.
+    """
+    bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
+    bands_10m = ["B02", "B03", "B04", "B08"]
+    band_array = np.ones((50, 10))
+    result = compute_ndvi(band_array, bands_20m, bands_10m)
     assert result.shape == (50,)

@@ -91,3 +91,32 @@ def compute_bsi(band_array: np.ndarray, bands_20m: list, bands_10m: list) -> np.
     safe_denominator = np.where(denominator == 0, 1, denominator)
     bsi_array = np.where(denominator == 0, 0, numerator / safe_denominator)
     return bsi_array
+
+def compute_ndvi(band_array: np.ndarray, bands_20m: list, bands_10m: list) -> np.ndarray:
+    """
+    Computes Normalised Difference Vegetation Index using 
+    the formulation ((B08-B04)/(B08+B04))
+    
+    Args:
+        band_array (np.ndarray): shape (pixels, n_bands)
+        bands_20m (list): List of bands for 20m
+        bands_10m (list): List of bands for 10m
+    
+    Returns:
+        ndvi_array (np.ndarray): An array containing the ndvi values.
+    """
+    bands_list = bands_20m + bands_10m
+
+    # Find column index for B08 and then extract its values from band_array.
+    b08 = bands_list.index('B08')
+    b08_values = band_array[:, b08]
+
+    # Find column index for B04 and then extract its values from band_array.
+    b04 = bands_list.index('B04')
+    b04_values = band_array[:, b04]
+
+    denominator = (b08_values + b04_values)
+    numerator = (b08_values - b04_values)
+    safe_denominator = np.where(denominator == 0, 1, denominator)
+    ndvi_array = np.where(denominator == 0, 0, numerator / safe_denominator)
+    return ndvi_array
