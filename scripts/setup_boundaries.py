@@ -62,7 +62,7 @@ def load_boundaries():
 
                 cursor.execute("""
                     INSERT INTO council_boundaries (gss_code, name, boundary)
-                    VALUES (%s, %s, ST_GeomFromGeoJSON(%s))
+                    VALUES (%s, %s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))
                 """, (gss_code, name, geometry_json))
 
                 conn.commit()
