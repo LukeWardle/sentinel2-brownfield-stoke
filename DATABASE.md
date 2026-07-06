@@ -75,8 +75,26 @@ CREATE TABLE pipeline_runs (
 );
 ```
 
+### 3.5 council_models
+
+Stores trained Random Forest classifier models for each council area. One row per council per training run, with the serialised model binary stored directly in the database as BYTEA to avoid filesystem dependencies when deployed to Supabase in Version 3. Accuracy, precision and recall metrics are stored alongside the model to track performance over time and across councils.
+
+```sql
+CREATE TABLE council_models (
+    id SERIAL PRIMARY KEY,
+    gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
+    trained_date DATE NOT NULL,
+    training_sites INTEGER,
+    accuracy FLOAT,
+    precision_score FLOAT,
+    recall_score FLOAT,
+    image_date DATE,
+    model_binary BYTEA
+);
+```
+
 ## 4. Table Relationships
-The diagram below shows the relationships between the four tables. All three data tables (brownfield_sites, candidate_sites, pipeline_runs) reference council_boundaries via gss_code as a foreign key, ensuring all data is linked to a specific council area.
+The diagram below shows the relationships between the five tables. All four data tables (brownfield_sites, candidate_sites, pipeline_runs, council_models) reference council_boundaries via gss_code as a foreign key, ensuring all data is linked to a specific council area.
 
 ![Database ERD](docs/images/database_erd.png)
 
