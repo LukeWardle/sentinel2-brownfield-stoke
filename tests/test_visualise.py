@@ -6,7 +6,7 @@ import numpy as np
 import os
 import matplotlib
 matplotlib.use('Agg')
-from src.visualise import convert_k_to_rgb, false_map_creation, report_creation
+from src.visualise import convert_k_to_rgb, false_map_creation, report_creation, create_interactive_map
 
 
 # --- convert_k_to_rgb tests ---
@@ -188,5 +188,66 @@ def test_report_creation_raises_filenotfounderror_for_missing_dir():
     with pytest.raises(FileNotFoundError):
         report_creation(2, sorted_eigenvalues, "/nonexistent/output/dir")
 
+# --- create_interactive_map tests ---
+def test_create_interactive_map_creates_file(tmp_path):
+    """Tests that create_interactive_map creates an HTML file in the output directory."""
+    candidate_sites = [
+        {
+            'centroid_utm_x': 555331.19,
+            'centroid_utm_y': 5871939.23,
+            'pixel_count': 100,
+            'mean_bsi': 0.15,
+            'matched_site_reference': 'SITE001'
+        },
+        {
+            'centroid_utm_x': 556000.00,
+            'centroid_utm_y': 5872000.00,
+            'pixel_count': 50,
+            'mean_bsi': 0.08,
+            'matched_site_reference': None
+        }
+    ]
+    create_interactive_map(candidate_sites, str(tmp_path), 'E06000021')
+    html_files = list(tmp_path.glob('interactive_map_*.html'))
+    assert len(html_files) == 1
 
+
+def test_create_interactive_map_file_is_html(tmp_path):
+    """Tests that the output file is valid HTML containing Folium map content."""
+    candidate_sites = [
+        {
+            'centroid_utm_x': 555331.19,
+            'centroid_utm_y': 5871939.23,
+            'pixel_count': 100,
+            'mean_bsi': 0.15,
+            'matched_site_reference': None
+        }
+    ]
+    create_interactive_map(candidate_sites, str(tmp_path), 'E06000021')
+    html_files = list(tmp_path.glob('interactive_map_*.html'))
+    content = html_files[0].read_text()
+    assert 'leaflet' in content.lower()
+
+
+def test_create_interactive_map_empty_sites_no_file(tmp_path):
+    """Tests that empty candidate_sites produces no output file."""
+    create_interactive_map([], str(tmp_path), 'E06000021')
+    html_files = list(tmp_path.glob('interactive_map_*.html'))
+    assert len(html_files) == 0
+
+
+def test_create_interactive_map_filename_contains_gss_code(tmp_path):
+    """Tests that the output filename contains the GSS code."""
+    candidate_sites = [
+        {
+            'centroid_utm_x': 555331.19,
+            'centroid_utm_y': 5871939.23,
+            'pixel_count': 100,
+            'mean_bsi': 0.15,
+            'matched_site_reference': None
+        }
+    ]
+    create_interactive_map(candidate_sites, str(tmp_path), 'E06000021')
+    html_files = list(tmp_path.glob('interactive_map_*.html'))
+    assert 'E06000021' in html_files[0].name
 

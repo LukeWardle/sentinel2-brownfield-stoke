@@ -212,20 +212,19 @@ graph TD
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| get_access_token | None — credentials loaded from .env | token: str | Authenticates with the Copernicus Data Space Ecosystem using Keycloak token endpoint at https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token. Returns access token required for all subsequent API calls. Raises ValueError if authentication fails |
+| get_access_token | None — credentials loaded from .env | token: str | Authenticates with the Copernicus Data Space Ecosystem using Keycloak token endpoint. Returns access token required for all subsequent API calls. Raises ValueError if authentication fails |
 | get_bounding_box | boundary: dict — GeoJSON boundary polygon in EPSG:4326 | bbox: dict — containing west, east, south, north coordinates | Extracts a simple bounding box from a GeoJSON boundary polygon. Used to create a simplified search area for the Copernicus API rather than sending the full complex boundary polygon which exceeds URL length limits |
 | search_products | gss_code: str, date: str, token: str, cloud_threshold: float = 0.10 | products: list — list of dicts each containing product_id, product_name, cloud_cover, sensing_date | Queries Copernicus OData catalogue for Sentinel-2 L2A products matching the council area bounding box (retrieved from database by GSS code), date and cloud cover threshold. Raises ValueError if no boundary found or no products found |
 | download_safe | product_id: str, product_name: str, token: str, output_dir: str | safe_path: str — full path to extracted SAFE folder | Downloads SAFE file zip for the given product ID using the Copernicus zipper endpoint, extracts to output_dir, removes the zip file and returns the path to the extracted SAFE folder. Raises ValueError if download fails, zip is corrupted, or extracted SAFE folder is missing |
-
 
 ### Module: visualise.py — False Colour Map, Results Report and Interactive Map
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | convert_k_to_rgb | X_reduced: np.ndarray (pixels, k) | rgb_array: np.ndarray (pixels, 3) | Takes top 3 principal components and normalises to 0-255 range for RGB colour channels. Raises ValueError if fewer than 3 components, empty array, or a component has zero variance |
-| false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str, mask: np.ndarray = None, original_shape: tuple = None | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Reconstructs the full 2D image by placing valid pixels back into their original positions using mask and original_shape, with masked-out pixels rendered as black. If mask or original_shape is None, falls back to assuming a square image (Version 1 limitation for use without nodata masking). Renders RGB array as false colour map using matplotlib and saves with timestamped filename to outputs/ |
+| false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str, mask: np.ndarray = None, original_shape: tuple = None | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Reconstructs the full 2D image by placing valid pixels back into their original positions using mask and original_shape, with masked-out pixels rendered as black. If mask or original_shape is None, falls back to assuming a square image. Renders RGB array as false colour map using matplotlib and saves with timestamped filename to outputs/ |
 | report_creation | k: int, sorted_eigenvalues: np.ndarray (10,), output_dir: str | None — saves results_report_YYYYMMDD_HHMMSS.md to outputs/ | Generates plain English results report for planning officials including variance explained and brownfield candidate findings — saves with timestamped filename to outputs/ |
-| create_interactive_map | candidate_sites: list, output_dir: str, gss_code: str | None — saves interactive_map_YYYYMMDD_HHMMSS.html to outputs/ | Creates interactive Folium map with OpenStreetMap base layer. Plots candidate sites as markers — green for register-matched sites, red for potential unregistered brownfield. Clickable popups show site reference, pixel count, BSI value and register match status. Saves as standalone HTML file viewable in any browser |
+| create_interactive_map | candidate_sites: list, output_dir: str, gss_code: str | None — saves interactive_map_YYYYMMDD_HHMMSS.html to outputs/ | Creates interactive Folium map with OpenStreetMap base layer. Converts candidate site UTM coordinates to lat/long using pyproj. Plots green markers for register-matched sites and red markers for unregistered candidates. Clickable popups show site reference, pixel count and BSI value. Saves as standalone HTML file viewable in any browser |
 
 ### Module: main.py — Pipeline Orchestration
 

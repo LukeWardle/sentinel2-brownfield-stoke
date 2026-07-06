@@ -111,3 +111,4 @@ widgetsnbextension==4.0.15
 psycopg2-binary
 python-dotenv
 scipy
+folium

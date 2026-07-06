@@ -6,6 +6,7 @@ for the false colour map. Renders the false colour map and saves it to outputs/.
 Creates the results report and saves it to the outputs/ folder too.
 """
 import numpy as np
+import folium
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
@@ -137,3 +138,81 @@ def report_creation(k: int, sorted_eigenvalues: np.ndarray, output_dir: str) -> 
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))
+
+def create_interactive_map(candidate_sites: list, output_dir: str, gss_code: str) -> None:
+    """
+    Creates an interactive Folium map with OpenStreetMap base layer showing
+    candidate brownfield sites as markers. Green markers indicate register-matched
+    sites, red markers indicate potential unregistered brownfield. Clickable popups
+    show site reference, pixel count, BSI value and register match status.
+    Saves as a standalone HTML file to outputs/.
+
+    Args:
+        candidate_sites (list): List of dicts from calculate_site_properties and
+                                register matching, each containing centroid_utm_x,
+                                centroid_utm_y, pixel_count, mean_bsi and
+                                matched_site_reference.
+        output_dir (str): Directory to save the HTML file — typically outputs/.
+        gss_code (str): GSS code for the council area being mapped — used in
+                        the output filename.
+
+    Returns:
+        None — saves interactive_map_YYYYMMDD_HHMMSS.html to outputs/.
+    """
+    import folium
+    from src.coordinate_conversion_pixel import convert_bng_to_utm
+    from datetime import datetime
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
+    if not candidate_sites:
+        print("No candidate sites to map — skipping interactive map generation")
+        return
+
+    # Calculate map centre from mean of candidate site centroids
+    # Candidate sites are in UTM (EPSG:32630) — convert to lat/long for Folium
+    # Use approximate conversion for map centre only
+    utm_xs = [site['centroid_utm_x'] for site in candidate_sites]
+    utm_ys = [site['centroid_utm_y'] for site in candidate_sites]
+    centre_x = sum(utm_xs) / len(utm_xs)
+    centre_y = sum(utm_ys) / len(utm_ys)
+
+    # Convert UTM centre to lat/long using pyproj
+    from pyproj import Transformer
+    transformer = Transformer.from_crs("EPSG:32630", "EPSG:4326")
+    centre_lat, centre_lon = transformer.transform(centre_x, centre_y)
+
+    # Create Folium map centred on candidate sites
+    m = folium.Map(location=[centre_lat, centre_lon], zoom_start=13)
+
+    # Add markers for each candidate site
+    for site in candidate_sites:
+        # Convert site centroid from UTM to lat/long
+        lat, lon = transformer.transform(site['centroid_utm_x'], site['centroid_utm_y'])
+
+        matched = site.get('matched_site_reference') is not None
+        marker_colour = 'green' if matched else 'red'
+        match_status = f"Matched: {site['matched_site_reference']}" if matched else "Unregistered candidate"
+
+        popup_html = f"""
+        <b>Candidate Brownfield Site</b><br>
+        <b>Status:</b> {match_status}<br>
+        <b>Pixel count:</b> {site.get('pixel_count', 'N/A')}<br>
+        <b>Mean BSI:</b> {site.get('mean_bsi', 0):.4f}<br>
+        <b>UTM X:</b> {site['centroid_utm_x']:.2f}<br>
+        <b>UTM Y:</b> {site['centroid_utm_y']:.2f}
+        """
+
+        folium.Marker(
+            location=[lat, lon],
+            popup=folium.Popup(popup_html, max_width=300),
+            icon=folium.Icon(color=marker_colour, icon='info-sign')
+        ).add_to(m)
+
+    # Save with timestamped filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"interactive_map_{gss_code}_{timestamp}.html"
+    filepath = os.path.join(output_dir, filename)
+    m.save(filepath)
+    print(f"Interactive map saved to {filepath}")
