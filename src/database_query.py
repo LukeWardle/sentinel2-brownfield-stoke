@@ -225,3 +225,53 @@ def get_db_connection():
         return connection
     except Exception as e:
         raise ValueError(f"Database connection failed: {e}")
+    
+def match_candidate_to_register(utm_x: float,
+                                 utm_y: float,
+                                 gss_code: str,
+                                 year: int,
+                                 connection,
+                                 distance_threshold: float = 100.0) -> str | None:
+    """
+    Checks whether a candidate site's UTM coordinates match any registered
+    brownfield site within the given distance threshold. Uses PostGIS ST_DWithin
+    for efficient spatial proximity checking.
+
+    Args:
+        utm_x (float): UTM X coordinate of the candidate site centroid in EPSG:32630.
+        utm_y (float): UTM Y coordinate of the candidate site centroid in EPSG:32630.
+        gss_code (str): GSS code for the council area being processed.
+        year (int): Year of the brownfield register to match against — e.g. 2024.
+        connection: Active psycopg2 database connection from
+                    database_query.get_db_connection.
+        distance_threshold (float): Maximum distance in metres between candidate
+                                    site centroid and register site for a match
+                                    to be recorded. Default 100 metres.
+
+    Returns:
+        str | None: site_reference of the matched register site if found within
+                    distance_threshold, or None if no match found.
+    """
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT site_reference
+        FROM brownfield_sites
+        WHERE gss_code = %s
+        AND year = %s
+        AND ST_DWithin(
+            location,
+            ST_SetSRID(ST_MakePoint(%s, %s), 32630),
+            %s
+        )
+        ORDER BY ST_Distance(
+            location,
+            ST_SetSRID(ST_MakePoint(%s, %s), 32630)
+        ) ASC
+        LIMIT 1
+    """, (gss_code, year, utm_x, utm_y, distance_threshold, utm_x, utm_y))
+
+    result = cursor.fetchone()
+    cursor.close()
+
+    return result[0] if result else None

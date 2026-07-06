@@ -201,12 +201,15 @@ graph TD
 
 ### Module: database_query.py — Runtime Database Queries and Candidate Site Storage
 
+### Module: database_query.py — Runtime Database Queries and Candidate Site Storage
+
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | retrieve_council_boundary_gss | gss_code: str, connection | boundary_polygon: dict | Queries council_boundaries table by GSS code and returns the council boundary polygon converted to EPSG:32630 using ST_Transform in PostGIS. Used by AOI clipping to constrain satellite image processing to the correct council area. Raises ValueError if GSS code not found |
 | retrieve_brownfield_register_data | gss_code: str, year: int, connection | register_sites: list — list of dicts each containing site_reference, utm_x, utm_y | Queries brownfield_sites table for all register sites matching the given GSS code and year. Returns site locations in UTM coordinates ready for comparison against candidate sites. Raises ValueError if no data found |
 | store_candidate_sites | candidate_sites: list, gss_code: str, image_date: str, run_timestamp: str, connection | None — writes to candidate_sites table | Stores candidate brownfield sites identified by the clustering module. Each site record includes GSS code, image date, run timestamp, UTM coordinates, pixel count, BSI value and register match status. Raises ValueError if candidate_sites is empty |
 | store_pipeline_metadata | gss_code: str, image_date: str, run_timestamp: str, status: str, candidate_sites_found: int, matched_to_register: int, unmatched: int, connection | None — writes to pipeline_runs table | Stores pipeline run metadata after each completed run. Raises ValueError if status is not 'success' or 'failure' or if any count is negative |
+| match_candidate_to_register | utm_x: float, utm_y: float, gss_code: str, year: int, connection, distance_threshold: float = 100.0 | str or None — site_reference of matched register site, or None if unmatched | Checks whether a candidate site's UTM coordinates match any registered brownfield site within the distance threshold using PostGIS ST_DWithin. Returns the closest matching site_reference or None if no match found within threshold |
 | get_db_connection | None | connection: psycopg2 connection | Creates and returns a single psycopg2 connection to the sentinel2_brownfield database using credentials from .env. Called once in main.py and passed into all subsequent database functions |
 
 ### Module: validation_database.py — Database Input Validation

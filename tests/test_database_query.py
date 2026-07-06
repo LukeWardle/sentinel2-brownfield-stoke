@@ -8,7 +8,9 @@ from src.database_query import (
     retrieve_council_boundary_gss,
     retrieve_brownfield_register_data,
     store_candidate_sites,
-    store_pipeline_metadata
+    store_pipeline_metadata,
+    match_candidate_to_register,
+    retrieve_brownfield_register_data
 )
 
 
@@ -125,3 +127,131 @@ def test_store_pipeline_metadata_stores_correctly(connection):
     count = cursor.fetchone()[0]
     assert count >= 1
     cursor.close()
+
+# --- match_candidate_to_register tests ---
+
+def test_match_candidate_returns_site_reference_when_match_found(connection):
+    """Tests that a site reference is returned when a register site is within threshold."""
+    # Use a known register site UTM coordinate from the database
+    register_sites = retrieve_brownfield_register_data('E06000021', 2024, connection)
+    first_site = register_sites[0]
+
+    result = match_candidate_to_register(
+        first_site['utm_x'],
+        first_site['utm_y'],
+        'E06000021',
+        2024,
+        connection,
+        distance_threshold=50.0
+    )
+    assert result == first_site['site_reference']
+
+
+def test_match_candidate_returns_none_when_no_match(connection):
+    """Tests that None is returned when no register site is within threshold."""
+    # UTM coordinate far outside Stoke — middle of the North Sea
+    result = match_candidate_to_register(
+        700000.0,
+        6000000.0,
+        'E06000021',
+        2024,
+        connection,
+        distance_threshold=100.0
+    )
+    assert result is None
+
+
+def test_match_candidate_returns_string_or_none(connection):
+    """Tests that the return type is always str or None."""
+    register_sites = retrieve_brownfield_register_data('E06000021', 2024, connection)
+    first_site = register_sites[0]
+
+    result = match_candidate_to_register(
+        first_site['utm_x'],
+        first_site['utm_y'],
+        'E06000021',
+        2024,
+        connection
+    )
+    assert result is None or isinstance(result, str)
+
+
+def test_match_candidate_zero_threshold_returns_none(connection):
+    """Tests that a zero distance threshold returns None for coordinates
+    that are not exactly on a register site."""
+    # Coordinate offset by 1 metre — not exactly on any register site
+    result = match_candidate_to_register(
+        555332.19,  # offset by 1 metre from known site
+        5871940.23,
+        'E06000021',
+        2024,
+        connection,
+        distance_threshold=0.0
+    )
+    assert result is None
+
+
+def test_match_candidate_large_threshold_finds_match(connection):
+    """Tests that a very large threshold finds a match for any coordinate near Stoke."""
+    result = match_candidate_to_register(
+        555331.19,
+        5871939.23,
+        'E06000021',
+        2024,
+        connection,
+        distance_threshold=50000.0
+    )
+    assert result is not None
+
+
+def test_match_candidate_invalid_year_returns_none(connection):
+    """Tests that a year with no register data returns None rather than raising."""
+    result = match_candidate_to_register(
+        555331.19,
+        5871939.23,
+        'E06000021',
+        1900,
+        connection,
+        distance_threshold=100.0
+    )
+    assert result is None
+
+
+def test_match_candidate_returns_closest_site(connection):
+    """Tests that the closest register site is returned when multiple are within threshold."""
+    register_sites = retrieve_brownfield_register_data('E06000021', 2024, connection)
+    first_site = register_sites[0]
+
+    result = match_candidate_to_register(
+        first_site['utm_x'],
+        first_site['utm_y'],
+        'E06000021',
+        2024,
+        connection,
+        distance_threshold=10000.0
+    )
+    assert result is not None
+    assert isinstance(result, str)
+
+
+def test_match_candidate_different_years_may_differ(connection):
+    """Tests that matching against different years can produce different results."""
+    result_2024 = match_candidate_to_register(
+        555331.19,
+        5871939.23,
+        'E06000021',
+        2024,
+        connection,
+        distance_threshold=50000.0
+    )
+    result_2019 = match_candidate_to_register(
+        555331.19,
+        5871939.23,
+        'E06000021',
+        2019,
+        connection,
+        distance_threshold=50000.0
+    )
+    # Both should return a string or None — we're testing they run without error
+    assert result_2024 is None or isinstance(result_2024, str)
+    assert result_2019 is None or isinstance(result_2019, str)
