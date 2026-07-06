@@ -1,122 +1,168 @@
-# sentinel2-brownfield-stoke
+# Sentinel-2 Brownfield Site Detection
+### Stoke-on-Trent Planning Intelligence Tool
 
-Satellite spectral analysis pipeline for brownfield site detection in Stoke-on-Trent.
-Built for Stoke City Council planning officials to identify candidate unregistered brownfield sites using free Sentinel-2 satellite imagery.
+A satellite-based system for identifying potential brownfield land in Stoke-on-Trent using free Sentinel-2 imagery from the Copernicus Data Space Ecosystem. The system automatically downloads satellite images, applies spectral analysis and machine learning to identify candidate brownfield sites, cross-references them against the council's brownfield register, and produces an interactive map for planning officials.
 
----
-
-## The Problem
-
-Stoke-on-Trent has one of the highest concentrations of brownfield land in England — a legacy of the pottery, mining and steelworks industries. The council's published brownfield register is incomplete. Manual site surveys are expensive and slow. This tool uses satellite spectral analysis to identify candidate sites that may not yet appear on the register, giving planning officers a faster way to find land suitable for housing development.
+No commercial tool currently identifies *unregistered* brownfield land from satellite imagery. This system fills that gap.
 
 ---
 
-## What This Tool Does
+## What It Does
 
-- Loads Sentinel-2 L2A satellite imagery covering Stoke-on-Trent
-- Runs PCA spectral decomposition across 10 spectral bands
-- Produces a false colour map highlighting candidate brownfield sites
-- Generates a plain English results report for planning officials
+1. **Downloads satellite imagery automatically** — authenticates with the Copernicus API and downloads Sentinel-2 L2A SAFE files for any UK council by GSS code and date
+2. **Computes spectral indices** — calculates Bare Soil Index (BSI) and Normalised Difference Vegetation Index (NDVI) across all valid pixels after normalising raw digital numbers to surface reflectance
+3. **Applies PCA spectral decomposition** — reduces 10 spectral bands to the most significant components, capturing 95%+ of spectral variance
+4. **Clusters candidate sites** — groups spectrally similar neighbouring pixels into discrete candidate brownfield sites using connected-component analysis
+5. **Cross-references the brownfield register** — compares candidate sites against Stoke-on-Trent's annual brownfield register stored in PostgreSQL, identifying matched and unregistered sites
+6. **Produces an interactive map** — overlays candidate sites onto OpenStreetMap using Folium, with green markers for register-matched sites and red markers for potential unregistered brownfield
+7. **Stores results in a database** — candidate sites and pipeline run metadata are stored in PostgreSQL for historical comparison and change detection
 
 ---
 
 ## Results
 
-Running the pipeline on the Sentinel-2 image captured 2026-05-25 (during a UK heatwave with near-zero cloud cover) produced the following:
+### Version 1 — PCA Spectral Analysis (Complete)
 
-![False colour map of Stoke-on-Trent](docs/images/false_colour_map.png)
+Running the Version 1 pipeline on the May 2026 Stoke-on-Trent image:
+- **21,223,650** valid pixels after SCL masking
+- **PC1** — 82.08% variance (brightness)
+- **PC2** — 13.73% variance (vegetation contrast)
+- **PC3** — 1.80% variance (likely brownfield signal)
+- **k=2** components retained at 95% variance threshold
 
-**PCA Variance Breakdown:**
+![False Colour Map](docs/images/false_colour_map.png)
 
-| Component | Variance Explained | Interpretation |
-|---|---|---|
-| PC1 | 82.08% | Overall brightness — dominant pattern |
-| PC2 | 13.73% | Vegetation vs non-vegetation contrast |
-| PC3 | 1.80% | Subtle spectral differences — likely brownfield signal |
+### Version 2 — BSI/NDVI Calibration Finding
 
-Only 2 components were needed to reach the 95% variance threshold, meaning the 10 spectral bands are highly correlated across this landscape. The false colour map always renders the top 3 components regardless of k, so PC3 — where the brownfield signal most likely resides — is visible but subtle, sitting beneath the much stronger brightness and vegetation patterns.
+BSI and NDVI were computed across all valid pixels and extracted at the 217 valid brownfield register site locations. A critical finding emerged:
 
-This is an important finding, not a limitation to hide: it confirms that unsupervised PCA alone gives only a partial view of brownfield land in Stoke-on-Trent, and is the direct justification for Version 2's Bare Soil Index pre-filtering — isolating bare soil pixels before running PCA, so the dominant spectral pattern becomes brownfield-relevant rather than brightness-driven.
+- **BSI at register sites:** range -0.26 to 0.17, mean 0.005
+- **NDVI at register sites:** range 0.02 to 0.64, mean 0.21
 
-This is a candidate identification tool. All outputs require physical verification before any planning decision is made.
+Registered brownfield sites do not exhibit simple spectral threshold signatures — they are predominantly vegetated at the time of the May 2026 image. This confirmed that multi-band PCA is the correct primary detection approach rather than index-based thresholding. BSI and NDVI are retained as additional spectral features rather than standalone detectors.
 
 ---
 
 ## Project Status
 
-Version 1 — Complete
-
 | Version | Status | Description |
 |---|---|---|
-| v1 | ✅ Complete | PCA spectral analysis pipeline — candidate site identification |
-| v2 | 🔄 Planned | Bare Soil Index preprocessing, brownfield register validation, change detection |
-| v3 | Planned | Supervised classification, Streamlit web interface, contamination filtering |
-| v4 | Planned | Multi-city expansion |
+| v1 | ✅ Complete | PCA spectral analysis, false colour map, results report |
+| v2 | 🔄 In Progress | Database, Copernicus API, BSI/NDVI, clustering, interactive map |
+| v3 | Planned | Streamlit web interface, supervised Random Forest classifier, Supabase migration |
+| v4 | Planned | UK-wide multi-council expansion, automated scheduling |
+
+---
+
+## Competitive Context
+
+This system addresses a gap not covered by any existing commercial tool. Nimbus Maps, LandTech/LandInsight and SearchLand all overlay the existing brownfield register on a map — they show what is already known. This system identifies brownfield land that does not appear on any register, using satellite spectral analysis validated by the Alan Turing Institute's DemoLand research project.
 
 ---
 
 ## Data Sources
 
-| Dataset | Source | Licence |
+| Dataset | Source | Notes |
 |---|---|---|
-| Sentinel-2 L2A satellite imagery | Copernicus Data Space Ecosystem | Free — Copernicus licence |
-| Stoke-on-Trent Brownfield Register 2019-2024 | data.gov.uk | Open Government Licence |
-| Contaminated Land Special Sites | Environment Agency | Environment Agency copyright |
-| UK Local Authority Boundaries | ONS Open Geography Portal | Open Government Licence |
-
-See [raw_data/README.md](raw_data/README.md) for download instructions.
+| Sentinel-2 L2A imagery | Copernicus Data Space Ecosystem | Free, downloaded automatically via API |
+| Brownfield register | DLUHC / data.gov.uk | Annual publication, 218 sites for Stoke-on-Trent |
+| UK council boundaries | ONS Open Geography Portal | 361 local authorities, stored in PostgreSQL |
 
 ---
 
 ## Setup
 
-```bash
-# Clone the repository
-git clone https://github.com/LukeWardle/sentinel2-brownfield-stoke.git
-cd sentinel2-brownfield-stoke
+### Prerequisites
+- Python 3.11+
+- PostgreSQL 16 with PostGIS 3.5 (install via Chocolatey on Windows: `choco install postgresql16`)
+- A Copernicus Data Space Ecosystem account (free at https://dataspace.copernicus.eu)
 
-# Create virtual environment
+### Installation
+
+```bash
+git clone https://github.com/LukeWardle/sentinel2-brownfield-stoke
+cd sentinel2-brownfield-stoke
 python -m venv venv
 venv\Scripts\activate  # Windows
-source venv/bin/activate  # Mac/Linux
-
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Download satellite data
-# Follow instructions in raw_data/README.md
+### Configuration
+
+Create a `.env` file in the project root (never commit this file):
+
+COPERNICUS_USERNAME=your_email@example.com
+
+COPERNICUS_PASSWORD=yourpassword
+
+DB_NAME=sentinel2_brownfield
+
+DB_HOST=127.0.0.1
+
+DB_PORT=5432
+
+DB_USER=postgres
+
+DB_PASSWORD=yourpassword
+
+### Database Setup
+
+Create the database and enable PostGIS:
+
+```sql
+CREATE DATABASE sentinel2_brownfield;
+\c sentinel2_brownfield
+CREATE EXTENSION postgis;
+```
+
+Load reference data (one-time setup):
+
+```bash
+python scripts/setup_boundaries.py
+python scripts/setup_brownfield.py
 ```
 
 ---
 
 ## Running the Pipeline
 
-Once dependencies are installed and the SAFE folder is downloaded:
-
 ```bash
 python src/main.py
 ```
 
-This runs the full pipeline end to end and saves two timestamped files to outputs/:
+The pipeline accepts a GSS code and date as inputs, downloads the relevant Sentinel-2 image automatically, and produces outputs in the `outputs/` folder.
 
-- `false_colour_map_YYYYMMDD_HHMMSS.png` — the PCA false colour map
-- `results_report_YYYYMMDD_HHMMSS.md` — plain English summary of variance explained per component
+---
 
-To run the pipeline on a different SAFE folder or save to a different location, edit the `SAFE_PATH` and `OUTPUT_DIR` variables at the bottom of `src/main.py`.
+## Outputs
+
+Each pipeline run produces three timestamped files in `outputs/`:
+
+- `false_colour_map_YYYYMMDD_HHMMSS.png` — PCA false colour map
+- `results_report_YYYYMMDD_HHMMSS.md` — Plain English results report
+- `interactive_map_GSSODE_YYYYMMDD_HHMMSS.html` — Interactive Folium map of candidate sites
+
+---
+
+## Running Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+139 tests passing across 12 modules.
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|---|---|
-| [EDA.md](EDA.md) | Exploratory data analysis — band inventory, pixel statistics, data quality |
-| [DESIGN.md](DESIGN.md) | System design — architecture, functions, risks, success criteria |
-| [data/README.md](data/README.md) | Reference dataset documentation |
-| [raw_data/README.md](raw_data/README.md) | Satellite data download instructions |
+- [DESIGN.md](DESIGN.md) — Full architecture, module design and Version 2 roadmap
+- [DATABASE.md](DATABASE.md) — PostgreSQL/PostGIS schema design and migration path
+- [EDA.md](EDA.md) — Exploratory data analysis findings
+- [data/README.md](data/README.md) — Data source download instructions
 
 ---
 
 ## Licence
 
-MIT
+MIT Licence — see LICENSE file for details.

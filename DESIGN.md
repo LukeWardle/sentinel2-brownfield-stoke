@@ -48,7 +48,7 @@ sentinel2-brownfield-stoke/
 │   ├── scl_filtering.py           — Removes pixels based on SCL class
 │   ├── validation_satellite.py    — Satellite image quality checks
 │   ├── validation_database.py     — Database input validation
-│   ├── preprocess.py              — Centre data, build covariance matrix, compute BSI
+│   ├── preprocess.py              — Centre data, build covariance matrix, compute BSI and NDVI
 │   ├── pca.py                     — Spectral decomposition, choose k, project
 │   ├── coordinate_conversion_pixel.py — Converts external coordinates to UTM and pixel positions
 │   ├── clustering.py              — Groups spectrally similar pixels into candidate sites
@@ -76,7 +76,8 @@ sentinel2-brownfield-stoke/
 ├── notebooks/
 │   ├── 01_data_inspection_eda.ipynb
 │   ├── 02_brownfield_register_eda.ipynb
-│   └── 03_boundary_file_eda.ipynb
+│   ├── 03_boundary_file_eda.ipynb
+│   └── 04_bsi_ndvi_calibration_eda.ipynb
 ├── data/                — Reference datasets committed to GitHub
 │   ├── README.md
 │   ├── brownfield_register_2019.csv
@@ -91,7 +92,9 @@ sentinel2-brownfield-stoke/
 ├── docs/
 │   └── images/
 │       ├── false_colour_map.png
-│       └── database_erd.png
+│       ├── database_erd.png
+│       ├── bsi_ndvi_heatmap.png
+│       └── bsi_ndvi_distribution.png
 ├── outputs/              — Generated false colour maps and results reports, gitignored except folder structure
 ├── raw_data/             — Sentinel-2 satellite imagery — not committed to GitHub
 │   ├── README.md
