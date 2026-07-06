@@ -115,15 +115,16 @@ graph TD
     B --> C[data_loading_satellite.py: load_bands + load_scl]
     C --> D[scl_filtering.py: mask_nodata]
     D --> E[validation_satellite.py: validate_bands + validate_quality]
-    E --> F[preprocess.py: normalise_band_array]
-    F --> G[preprocess.py: compute_bsi + compute_ndvi]
-    G --> H[preprocess.py: centre_data + compute_covariance]
-    H --> I[pca.py]
-    I --> J[clustering.py]
-    J --> K[database_query.py: store_candidate_sites]
-    K --> L[database_query.py: match_against_register]
-    L --> M[visualise.py]
-    M --> N[outputs/]
+    E --> F[aoi_clipping.py: clip_to_council_boundary]
+    F --> G[preprocess.py: normalise_band_array]
+    G --> H[preprocess.py: compute_bsi + compute_ndvi]
+    H --> I[preprocess.py: centre_data + compute_covariance]
+    I --> J[pca.py]
+    J --> K[clustering.py]
+    K --> L[database_query.py: store_candidate_sites]
+    L --> M[database_query.py: match_against_register]
+    M --> N[visualise.py]
+    N --> O[outputs/]
 ```
 
 **Pipeline Flow 2 — Annual Setup Process**
@@ -183,6 +184,12 @@ graph TD
 |---|---|---|---|
 | convert_bng_to_utm | x: float, y: float | utm_position: dict | Converts a coordinate from EPSG:27700 (British National Grid) into EPSG:32630 (UTM Zone 30N) using pyproj.Transformer, matching the conversion already tested in 02_brownfield_register_eda.ipynb. utm_position contains the converted x and y values, ready to be passed into utm_coordinate_to_pixel |
 | utm_coordinate_to_pixel | x: float, y: float, tile_metadata: dict | pixel_position: dict | Converts a UTM coordinate into a pixel position using column = int((x-left)/resolution) and row = int((top-y)/resolution) — tile_metadata supplies left, top and resolution from the satellite image. Used by register validation and AOI clipping to locate specific coordinates within the pixel grid |
+
+### Module: aoi_clipping.py — Clips Satellite Image to Council Boundary
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| clip_to_council_boundary | band_array: np.ndarray (pixels, 10), mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict, gss_code: str, connection | clipped_array: np.ndarray (valid_pixels, 10), clipped_mask: np.ndarray (pixels,) | Clips the satellite band array to only include pixels that fall within the council boundary retrieved from the database by GSS code. Uses matplotlib.path.Path for vectorised point-in-polygon checking across all valid pixels. Handles MultiPolygon boundaries by checking each polygon separately and combining results. Returns the clipped band array and updated boolean mask. Raises ValueError if no boundary found for the given GSS code |
 
 ### Module: clustering.py — Groups Spectrally Similar Pixels into Candidate Sites
 
