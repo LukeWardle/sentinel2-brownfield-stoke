@@ -30,7 +30,7 @@ REGISTER_FILES = {
     2024: PROJECT_ROOT / "data" / "brownfield_register_2024.csv",
 }
 
-GSS_CODE = "E06000021"
+GSS_CODE = sys.argv[1] if len(sys.argv) > 1 else "E06000021"
 
 
 def connect_db():
