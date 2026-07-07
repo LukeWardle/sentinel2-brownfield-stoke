@@ -31,7 +31,10 @@ CREATE TABLE council_boundaries (
 ```
 
 ### 3.2 brownfield_sites
-```
+
+Stores all available years of the Stoke-on-Trent brownfield register, and can be extended to all UK councils using scripts/download_brownfield_registers.py. Populated annually by scripts/setup_brownfield.py for manual register files, or scripts/download_brownfield_registers.py for automated download from planning.data.gov.uk. Coordinates are stored in both their original BNG form (via UTM conversion) and as a PostGIS POINT geometry for spatial queries. The year column allows change detection queries across annual registers without requiring separate tables. A unique constraint on (site_reference, gss_code, year) prevents duplicate entries when running setup or download scripts multiple times.
+
+```sql
 CREATE TABLE brownfield_sites (
     id SERIAL PRIMARY KEY,
     site_reference VARCHAR(50),
@@ -42,7 +45,8 @@ CREATE TABLE brownfield_sites (
     utm_y FLOAT,
     hectares FLOAT,
     planning_status VARCHAR(100),
-    location GEOMETRY(POINT, 32630)
+    location GEOMETRY(POINT, 32630),
+    CONSTRAINT brownfield_sites_unique UNIQUE (site_reference, gss_code, year)
 );
 ```
 
