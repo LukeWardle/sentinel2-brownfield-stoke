@@ -275,3 +275,91 @@ def match_candidate_to_register(utm_x: float,
     cursor.close()
 
     return result[0] if result else None
+
+def detect_register_changes(gss_code: str,
+                            year_from: int,
+                            year_to: int,
+                            connection) -> dict:
+    """
+    Compares brownfield register data across two years for a given council,
+    identifying sites that have been added or removed between the two years.
+    Sites removed likely indicate development has taken place. Sites added
+    indicate newly identified brownfield land.
+
+    Args:
+        gss_code (str): GSS code for the council area to analyse.
+        year_from (int): The earlier year to compare from.
+        year_to (int): The later year to compare to.
+        connection: Active psycopg2 database connection from
+                    database_query.get_db_connection.
+
+    Returns:
+        dict: Contains two keys:
+              'removed' — list of dicts for sites in year_from but not year_to,
+              each containing site_reference and name_address.
+              'added' — list of dicts for sites in year_to but not year_from,
+              each containing site_reference and name_address.
+
+    Raises:
+        ValueError: If year_from >= year_to or no data exists for either year.
+    """
+    if year_from >= year_to:
+        raise ValueError(
+            f"year_from ({year_from}) must be less than year_to ({year_to})"
+        )
+
+    cursor = connection.cursor()
+
+    # Check data exists for both years
+    for year in [year_from, year_to]:
+        cursor.execute(
+            "SELECT COUNT(*) FROM brownfield_sites WHERE gss_code = %s AND year = %s",
+            (gss_code, year)
+        )
+        if cursor.fetchone()[0] == 0:
+            cursor.close()
+            raise ValueError(
+                f"No brownfield register data found for GSS code '{gss_code}' "
+                f"and year {year}"
+            )
+
+    # Sites removed — in year_from but not in year_to
+    cursor.execute("""
+        SELECT site_reference, name_address
+        FROM brownfield_sites
+        WHERE gss_code = %s AND year = %s
+        AND site_reference NOT IN (
+            SELECT site_reference FROM brownfield_sites
+            WHERE gss_code = %s AND year = %s
+        )
+        ORDER BY site_reference
+    """, (gss_code, year_from, gss_code, year_to))
+
+    removed = [
+        {'site_reference': row[0], 'name_address': row[1]}
+        for row in cursor.fetchall()
+    ]
+
+    # Sites added — in year_to but not in year_from
+    cursor.execute("""
+        SELECT site_reference, name_address
+        FROM brownfield_sites
+        WHERE gss_code = %s AND year = %s
+        AND site_reference NOT IN (
+            SELECT site_reference FROM brownfield_sites
+            WHERE gss_code = %s AND year = %s
+        )
+        ORDER BY site_reference
+    """, (gss_code, year_to, gss_code, year_from))
+
+    added = [
+        {'site_reference': row[0], 'name_address': row[1]}
+        for row in cursor.fetchall()
+    ]
+
+    cursor.close()
+
+    return {
+        'removed': removed,
+        'added': added
+    }

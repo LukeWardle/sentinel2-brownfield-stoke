@@ -10,7 +10,8 @@ from src.database_query import (
     store_candidate_sites,
     store_pipeline_metadata,
     match_candidate_to_register,
-    retrieve_brownfield_register_data
+    retrieve_brownfield_register_data,
+    detect_register_changes
 )
 
 
@@ -255,3 +256,61 @@ def test_match_candidate_different_years_may_differ(connection):
     # Both should return a string or None — we're testing they run without error
     assert result_2024 is None or isinstance(result_2024, str)
     assert result_2019 is None or isinstance(result_2019, str)
+
+# --- detect_register_changes tests ---
+
+def test_detect_register_changes_returns_dict(connection):
+    """Tests that detect_register_changes returns a dict with added and removed keys."""
+    result = detect_register_changes('E06000021', 2019, 2024, connection)
+    assert isinstance(result, dict)
+    assert 'removed' in result
+    assert 'added' in result
+
+
+def test_detect_register_changes_returns_lists(connection):
+    """Tests that added and removed values are lists."""
+    result = detect_register_changes('E06000021', 2019, 2024, connection)
+    assert isinstance(result['removed'], list)
+    assert isinstance(result['added'], list)
+
+
+def test_detect_register_changes_same_year_raises(connection):
+    """Tests that comparing a year to itself raises ValueError."""
+    with pytest.raises(ValueError):
+        detect_register_changes('E06000021', 2024, 2024, connection)
+
+
+def test_detect_register_changes_year_from_after_year_to_raises(connection):
+    """Tests that year_from greater than year_to raises ValueError."""
+    with pytest.raises(ValueError):
+        detect_register_changes('E06000021', 2024, 2019, connection)
+
+
+def test_detect_register_changes_invalid_year_raises(connection):
+    """Tests that a year with no data raises ValueError."""
+    with pytest.raises(ValueError):
+        detect_register_changes('E06000021', 1900, 2024, connection)
+
+
+def test_detect_register_changes_site_dicts_have_correct_keys(connection):
+    """Tests that each site dict contains site_reference and name_address."""
+    result = detect_register_changes('E06000021', 2019, 2024, connection)
+    for site in result['removed'] + result['added']:
+        assert 'site_reference' in site
+        assert 'name_address' in site
+
+
+def test_detect_register_changes_no_overlap(connection):
+    """Tests that no site appears in both added and removed."""
+    result = detect_register_changes('E06000021', 2019, 2024, connection)
+    removed_refs = {s['site_reference'] for s in result['removed']}
+    added_refs = {s['site_reference'] for s in result['added']}
+    assert len(removed_refs & added_refs) == 0
+
+
+def test_detect_register_changes_same_data_returns_empty(connection):
+    """Tests that comparing identical years of data returns empty lists."""
+    result = detect_register_changes('E06000021', 2019, 2020, connection)
+    # 2019 and 2020 have identical sites so both lists should be empty
+    assert result['removed'] == []
+    assert result['added'] == []

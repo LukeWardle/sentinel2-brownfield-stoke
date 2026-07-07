@@ -201,8 +201,6 @@ graph TD
 
 ### Module: database_query.py — Runtime Database Queries and Candidate Site Storage
 
-### Module: database_query.py — Runtime Database Queries and Candidate Site Storage
-
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | retrieve_council_boundary_gss | gss_code: str, connection | boundary_polygon: dict | Queries council_boundaries table by GSS code and returns the council boundary polygon converted to EPSG:32630 using ST_Transform in PostGIS. Used by AOI clipping to constrain satellite image processing to the correct council area. Raises ValueError if GSS code not found |
