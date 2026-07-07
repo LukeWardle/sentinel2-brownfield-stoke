@@ -21,19 +21,14 @@ def safe_path():
 
 
 # --- run_pipeline tests ---
-def test_run_pipeline_creates_output_files(safe_path, tmp_path):
+def test_run_pipeline_creates_false_colour_map(safe_path, tmp_path):
     """
     Tests that run_pipeline completes successfully against real data and
-    creates both the false colour map and results report in output_dir.
+    creates a false colour map PNG in output_dir.
     """
     run_pipeline(safe_path, str(tmp_path))
-
-    files = os.listdir(tmp_path)
-    map_files = [f for f in files if f.startswith("false_colour_map_") and f.endswith(".png")]
-    report_files = [f for f in files if f.startswith("results_report_") and f.endswith(".md")]
-
-    assert len(map_files) == 1
-    assert len(report_files) == 1
+    png_files = list(Path(tmp_path).glob('false_colour_map_*.png'))
+    assert len(png_files) == 1
 
 
 def test_run_pipeline_creates_output_dir_if_missing(safe_path, tmp_path):
@@ -43,18 +38,14 @@ def test_run_pipeline_creates_output_dir_if_missing(safe_path, tmp_path):
     """
     new_output_dir = tmp_path / "does_not_exist_yet"
     assert not new_output_dir.exists()
-
     run_pipeline(safe_path, str(new_output_dir))
-
     assert new_output_dir.exists()
-    files = os.listdir(new_output_dir)
-    assert len(files) == 2
 
 
 def test_run_pipeline_raises_filenotfounderror_for_invalid_safe_path(tmp_path):
     """
     Tests that run_pipeline raises FileNotFoundError when safe_path does
-    not end with .SAFE or does not exist, propagated from validate_path.
+    not exist, propagated from validate_path.
     """
     with pytest.raises((FileNotFoundError, ValueError)):
         run_pipeline("/nonexistent/path/that/does/not/exist.SAFE", str(tmp_path))

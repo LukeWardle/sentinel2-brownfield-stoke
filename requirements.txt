@@ -112,3 +112,4 @@ psycopg2-binary
 python-dotenv
 scipy
 folium
+reportlab

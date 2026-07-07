@@ -143,6 +143,7 @@ def calculate_site_properties(candidate_groups: dict,
         site_properties.append({
             'site_id': site_id,
             'pixel_count': pixel_count,
+            'hectares': round(pixel_count * 0.04, 2),
             'mean_bsi': mean_bsi,
             'centroid_utm_x': float(centroid_utm_x),
             'centroid_utm_y': float(centroid_utm_y)

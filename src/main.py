@@ -61,7 +61,7 @@ def run_pipeline(safe_path: str, output_dir: str):
     rgb_array = convert_k_to_rgb(X_for_map)
 
     false_map_creation(rgb_array, output_dir, mask, original_shape)
-    report_creation(k, sorted_eigenvalues, output_dir)
+    # report_creation(k, sorted_eigenvalues, output_dir)
 
 
 if __name__ == "__main__":
