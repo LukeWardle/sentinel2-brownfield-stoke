@@ -1,72 +1,319 @@
 """
-main.py - Orchestrates the full pipeline.
-=========================================
+main.py - Orchestrates the full Version 2 pipeline.
+====================================================
 Runs the full Sentinel-2 brownfield detection pipeline end to end — from
-loading a raw SAFE folder through to saving a false colour map and results
-report in outputs/. Calls every function from data_loading_satellite.py,
-validation_satellite.py,
+automatic SAFE file download via the Copernicus API through to saving a
+false colour map, PDF report and interactive map in outputs/. Accepts a
+GSS code and image date as inputs rather than a manual SAFE path.
+
+All Version 2 modules are called in sequence:
+api_copernicus → data_loading_satellite → scl_filtering → validation_satellite
+→ aoi_clipping → preprocess → pca → clustering → database_query → visualise
 """
 import sys
 import os
+import shutil
+import rasterio
+import argparse
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.data_loading_satellite import load_bands, load_scl
-from src.scl_filtering import mask_nodata
-from src.validation_satellite import validate_path, validate_bands, validate_quality
-from src.preprocess import centre_data, compute_covariance
-from src.pca import spectral_decomposition, sort_variance, cumulative_variance_for_k, project
-from src.visualise import convert_k_to_rgb, false_map_creation, report_creation
+from datetime import datetime
 
-def run_pipeline(safe_path: str, output_dir: str):
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+def get_tile_metadata(safe_path: str) -> dict:
     """
-    Orchestrates the full Sentinel-2 brownfield detection pipeline — from
-    loading raw satellite data through to saving a false colour map and
-    results report. Calls validate_path, load_bands, load_scl, mask_nodata,
-    validate_bands, validate_quality, centre_data, compute_covariance,
-    spectral_decomposition, sort_variance, cumulative_variance_for_k, project
-    (twice — once for k components, once for 3 components), convert_k_to_rgb,
-    false_map_creation and report_creation in sequence.
+    Retrieves the spatial metadata required for converting between
+    UTM coordinates and image pixel coordinates.
 
     Args:
-        safe_path (str): Path to the Sentinel-2 SAFE folder.
-        output_dir (str): Path to the folder where the false colour map and
-                          results report will be saved.
+        safe_path (str):
+            Path to the Sentinel-2 SAFE folder.
 
     Returns:
-        None — saves false_colour_map_YYYYMMDD_HHMMSS.png and
-              results_report_YYYYMMDD_HHMMSS.md to output_dir.
+        dict:
+            Dictionary containing:
+
+            left (float)
+                Western edge of the tile.
+
+            top (float)
+                Northern edge of the tile.
+
+            resolution (int)
+                Pixel size in metres.
+    """
+    granule_dir = Path(safe_path) / "GRANULE"
+
+    granule_name = os.listdir(granule_dir)[0]
+
+    r20m_path = granule_dir / granule_name / "IMG_DATA" / "R20m"
+
+    sample_band = next(
+        f for f in os.listdir(r20m_path)
+        if "_B05_" in f
+    )
+
+    with rasterio.open(r20m_path / sample_band) as src:
+        bounds = src.bounds
+
+    return {
+        "left": bounds.left,
+        "top": bounds.top,
+        "resolution": 20
+    }
+
+from src.api_copernicus import get_access_token, search_products, download_safe
+from src.data_loading_satellite import load_bands, load_scl, bands_20m, bands_10m
+from src.scl_filtering import mask_nodata
+from src.validation_satellite import validate_path, validate_bands, validate_quality
+from src.validation_database import (
+    validate_council_boundary_gss,
+    brownfield_data_validation,
+    store_candidate_sites_validation,
+    store_pipeline_metadata_validation
+)
+from src.aoi_clipping import clip_to_council_boundary
+from src.preprocess import normalise_band_array, compute_bsi, compute_ndvi, centre_data, compute_covariance
+from src.pca import spectral_decomposition, sort_variance, cumulative_variance_for_k, project
+from src.clustering import group_pixels_for_candidate_sites, calculate_site_properties, generate_boundary_polygons
+from src.database_query import (
+    get_db_connection,
+    retrieve_council_boundary_gss,
+    retrieve_brownfield_register_data,
+    match_candidate_to_register,
+    store_candidate_sites,
+    store_pipeline_metadata,
+    detect_register_changes
+)
+from src.coordinate_conversion_pixel import utm_coordinate_to_pixel
+from src.visualise import convert_k_to_rgb, false_map_creation, report_creation, create_interactive_map
+
+
+def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
+    """
+    Orchestrates the full Version 2 Sentinel-2 brownfield detection pipeline.
+    Downloads the SAFE file automatically via the Copernicus API, processes
+    the satellite imagery, identifies candidate brownfield sites, cross-references
+    against the brownfield register, and produces a false colour map, PDF report
+    and interactive map.
+
+    Args:
+        gss_code (str): GSS code for the council area to process —
+                        e.g. 'E06000021' for Stoke-on-Trent.
+        image_date (str): Date of the Sentinel-2 image to download and process
+                          in YYYY-MM-DD format.
+        output_dir (str): Path to the folder where outputs will be saved.
+
+    Returns:
+        None — saves false_colour_map, results_report PDF and interactive_map
+               to output_dir. Stores candidate sites and pipeline run metadata
+               in the PostgreSQL database.
 
     Raises:
-        FileNotFoundError: If safe_path does not exist or is not a .SAFE folder.
-        ValueError: If band files are missing, image quality is insufficient,
-                   or data is corrupt at any validation stage.
+        ValueError: If GSS code is invalid, no products found for the given date,
+                    database validation fails, or data is corrupt at any stage.
+        FileNotFoundError: If downloaded SAFE folder is missing expected structure.
     """
     os.makedirs(output_dir, exist_ok=True)
+    run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    safe_path = None
+    status = 'failure'
 
-    validate_path(safe_path)
-    band_array = load_bands(safe_path)
-    scl_array = load_scl(safe_path)
-    masked_array, mask, original_shape = mask_nodata(band_array, scl_array)
-    validate_bands(masked_array)
-    validate_quality(scl_array)
+    # Open single database connection — passed through all database functions
+    conn = get_db_connection()
 
-    centred_array = centre_data(masked_array)
-    covariance_matrix = compute_covariance(centred_array)
-    eigenvalues, eigenvectors = spectral_decomposition(covariance_matrix)
-    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
-    k = cumulative_variance_for_k(sorted_eigenvalues)
+    try:
+        # --- Step 1: Validate database inputs ---
+        print(f"Validating GSS code: {gss_code}")
+        validate_council_boundary_gss(gss_code, conn)
 
-    X_reduced = project(centred_array, sorted_eigenvectors, k)
-    X_for_map = project(centred_array, sorted_eigenvectors, 3)
-    rgb_array = convert_k_to_rgb(X_for_map)
+        # --- Step 2: Download SAFE file via Copernicus API ---
+        print(f"Authenticating with Copernicus API...")
+        token = get_access_token()
 
-    false_map_creation(rgb_array, output_dir, mask, original_shape)
-    # report_creation(k, sorted_eigenvalues, output_dir)
+        print(f"Searching for Sentinel-2 image for {gss_code} on {image_date}...")
+        products = search_products(gss_code, image_date, token)
+        best_product = products[0]
+        print(f"Found: {best_product['product_name']} — cloud cover: {best_product['cloud_cover']}")
+
+        raw_data_dir = str(Path(__file__).parent.parent / "raw_data")
+        print(f"Downloading SAFE file...")
+        safe_path = download_safe(
+            best_product['product_id'],
+            best_product['product_name'],
+            token,
+            raw_data_dir
+        )
+        print(f"Downloaded to: {safe_path}")
+
+        # --- Step 3: Load satellite data ---
+        print("Loading satellite bands...")
+        validate_path(safe_path)
+        band_array = load_bands(safe_path)
+        scl_array = load_scl(safe_path)
+
+        # --- Step 4: SCL filtering ---
+        print("Applying SCL masking...")
+        masked_array, mask, original_shape = mask_nodata(band_array, scl_array)
+
+        # --- Step 5: Validate satellite data ---
+        validate_bands(masked_array)
+        validate_quality(scl_array)
+
+        # --- Step 6: Get tile metadata for coordinate conversion ---
+        tile_metadata = get_tile_metadata(safe_path)
+
+        # --- Step 7: AOI clipping ---
+        print(f"Clipping to council boundary for {gss_code}...")
+        masked_array, mask = clip_to_council_boundary(
+            masked_array, mask, original_shape, tile_metadata, gss_code, conn
+        )
+
+        # --- Step 8: Normalise band array ---
+        print("Normalising band array to surface reflectance...")
+        normalised_array = normalise_band_array(masked_array)
+
+        # --- Step 9: Compute spectral indices ---
+        print("Computing BSI and NDVI...")
+        bsi_array = compute_bsi(normalised_array, bands_20m, bands_10m)
+        ndvi_array = compute_ndvi(normalised_array, bands_20m, bands_10m)
+
+        # --- Step 10: PCA ---
+        print("Running PCA spectral decomposition...")
+        centred_array = centre_data(normalised_array)
+        covariance_matrix = compute_covariance(centred_array)
+        eigenvalues, eigenvectors = spectral_decomposition(covariance_matrix)
+        sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+        k = cumulative_variance_for_k(sorted_eigenvalues)
+        k = max(k, 3)
+        X_reduced = project(centred_array, sorted_eigenvectors, k)
+        X_for_map = project(centred_array, sorted_eigenvectors, 3)
+
+        # --- Step 11: Clustering ---
+        print("Grouping pixels into candidate sites...")
+        candidate_groups = group_pixels_for_candidate_sites(
+            X_reduced, mask, original_shape, bsi_array, ndvi_array,
+            bsi_threshold=0.1,
+            ndvi_threshold=0.2,
+            min_pixels=10,
+            max_pixels=2500
+        )
+        print(f"Found {len(candidate_groups)} candidate groups")
+
+        site_properties = calculate_site_properties(
+            candidate_groups, bsi_array, mask, original_shape, tile_metadata
+        )
+
+        generate_boundary_polygons(candidate_groups, mask, original_shape, tile_metadata)
+
+        # --- Step 12: Register matching ---
+        print("Matching candidate sites against brownfield register...")
+        register_year = int(image_date[:4])
+
+        # Check register data exists for this year, fall back to 2024 if not
+        try:
+            brownfield_data_validation(gss_code, register_year, conn)
+        except ValueError:
+            register_year = 2024
+            print(f"No register data for {image_date[:4]}, using 2024 register")
+
+        for site in site_properties:
+            site['matched_site_reference'] = match_candidate_to_register(
+                site['centroid_utm_x'],
+                site['centroid_utm_y'],
+                gss_code,
+                register_year,
+                conn
+            )
+
+        matched = sum(1 for s in site_properties if s.get('matched_site_reference'))
+        unmatched = len(site_properties) - matched
+        print(f"Matched: {matched}, Unregistered candidates: {unmatched}")
+
+        # --- Step 13: Store candidate sites ---
+        if site_properties:
+            store_candidate_sites_validation(site_properties)
+            store_candidate_sites(
+                site_properties, gss_code, image_date, run_timestamp, conn
+            )
+
+        # --- Step 14: Change detection ---
+        print("Running change detection across register years...")
+        try:
+            change_detection = detect_register_changes(
+                gss_code, 2019, register_year, conn
+            )
+            print(f"Change detection — added: {len(change_detection['added'])}, "
+                  f"removed: {len(change_detection['removed'])}")
+        except ValueError:
+            change_detection = {'added': [], 'removed': []}
+            print("Insufficient register data for change detection")
+
+        # --- Step 15: Generate outputs ---
+        print("Generating false colour map...")
+        rgb_array = convert_k_to_rgb(X_for_map)
+        false_map_creation(rgb_array, output_dir, mask, original_shape)
+
+        print("Generating PDF report...")
+        report_creation(
+            k, sorted_eigenvalues, output_dir,
+            gss_code, image_date,
+            site_properties, change_detection
+        )
+
+        print("Generating interactive map...")
+        create_interactive_map(site_properties, output_dir, gss_code)
+
+        status = 'success'
+        print(f"Pipeline complete — status: {status}")
+
+    except Exception as e:
+        print(f"Pipeline failed: {e}")
+        status = 'failure'
+        raise
+
+    finally:
+        # --- Step 16: Store pipeline metadata ---
+        try:
+            matched_count = sum(1 for s in site_properties if s.get('matched_site_reference')) \
+                if 'site_properties' in locals() else 0
+            unmatched_count = len(site_properties) - matched_count \
+                if 'site_properties' in locals() else 0
+
+            store_pipeline_metadata_validation(
+                gss_code, image_date, status,
+                len(site_properties) if 'site_properties' in locals() else 0,
+                matched_count, unmatched_count
+            )
+            store_pipeline_metadata(
+                gss_code, image_date, run_timestamp, status,
+                len(site_properties) if 'site_properties' in locals() else 0,
+                matched_count, unmatched_count, conn
+            )
+        except Exception:
+            pass
+
+        # --- Step 17: Delete SAFE file ---
+        if safe_path and os.path.exists(safe_path):
+            outer_safe = str(Path(safe_path).parent)
+            if os.path.exists(outer_safe) and outer_safe.endswith('.SAFE'):
+                shutil.rmtree(outer_safe, ignore_errors=True)
+            elif os.path.exists(safe_path) and safe_path.endswith('.SAFE'):
+                shutil.rmtree(safe_path, ignore_errors=True)
+
+        # --- Step 18: Close database connection ---
+        conn.close()
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-    PROJECT_ROOT = Path(__file__).parent.parent
-    SAFE_PATH = str(PROJECT_ROOT / "raw_data" / "S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE" / "S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE")
-    OUTPUT_DIR = str(PROJECT_ROOT / "outputs")
-    run_pipeline(SAFE_PATH, OUTPUT_DIR)
+    parser = argparse.ArgumentParser(description='SiteSignal Ltd — Brownfield Detection Pipeline')
+    parser.add_argument('--gss_code', type=str, default='E06000021',
+                        help='GSS code for the council area (default: E06000021 — Stoke-on-Trent)')
+    parser.add_argument('--date', type=str, default='2026-05-25',
+                        help='Image date in YYYY-MM-DD format (default: 2026-05-25)')
+    parser.add_argument('--output_dir', type=str,
+                        default=str(Path(__file__).parent.parent / "outputs"),
+                        help='Output directory (default: outputs/)')
+    args = parser.parse_args()
+
+    run_pipeline(args.gss_code, args.date, args.output_dir)

@@ -168,7 +168,7 @@ def search_products(gss_code: str,
     products = [
         {
             'product_id': item['Id'],
-            'product_name': item['Name'],
+            'product_name': item['Name'].removesuffix('.SAFE'),
             'cloud_cover': next(
                 (attr['Value'] for attr in item.get('Attributes', [])
                  if attr['Name'] == 'cloudCover'), None

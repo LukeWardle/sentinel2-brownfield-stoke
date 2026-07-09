@@ -59,7 +59,7 @@ def sort_variance(eigenvalues: np.ndarray, eigenvectors: np.ndarray) -> tuple:
     return sorted_eigenvalues, sorted_eigenvectors
 
 def cumulative_variance_for_k(sorted_eigenvalues: np.ndarray,
-                              variance_threshold: float=0.95) -> int:
+                              variance_threshold: float=0.80) -> int:
     """
     Calculates the cumulative covariance, returns k components that reach 95% threshold.
     

@@ -92,10 +92,10 @@ def test_store_candidate_sites_stores_correctly(connection):
     """Tests that candidate sites are stored correctly in the database."""
     candidate_sites = [
         {
-            'utm_x': 555331.19,
-            'utm_y': 5871939.23,
+            'centroid_utm_x': 555331.19,
+            'centroid_utm_y': 5871939.23,
             'pixel_count': 100,
-            'bsi_value': 0.15,
+            'mean_bsi': 0.15,
             'matched_site_reference': None
         }
     ]

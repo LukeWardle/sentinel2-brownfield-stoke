@@ -15,6 +15,7 @@ to version control.
 """
 import os
 import psycopg2
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,20 +40,16 @@ def retrieve_council_boundary_gss(gss_code: str, connection) -> dict:
         ValueError: If no boundary is found for the given GSS code.
     """
     cursor = connection.cursor()
-
     cursor.execute("""
         SELECT ST_AsGeoJSON(ST_Transform(ST_SetSRID(boundary, 4326), 32630))
         FROM council_boundaries
         WHERE gss_code = %s
     """, (gss_code,))
-
     result = cursor.fetchone()
     cursor.close()
-
     if result is None:
         raise ValueError(f"No boundary found for GSS code: {gss_code}")
 
-    import json
     boundary_polygon = json.loads(result[0])
     return boundary_polygon
 
@@ -84,10 +81,8 @@ def retrieve_brownfield_register_data(gss_code: str, year: int, connection) -> l
         FROM brownfield_sites
         WHERE gss_code = %s AND year = %s
     """, (gss_code, year))
-
     results = cursor.fetchall()
     cursor.close()
-
     if not results:
         raise ValueError(f"No brownfield register data found for GSS code {gss_code} and year {year}")
 
@@ -137,13 +132,12 @@ def store_candidate_sites(candidate_sites: list,
             gss_code,
             image_date,
             run_timestamp,
-            site['utm_x'],
-            site['utm_y'],
+            site['centroid_utm_x'],
+            site['centroid_utm_y'],
             site['pixel_count'],
-            site['bsi_value'],
+            site['mean_bsi'],
             site.get('matched_site_reference', None)
         ))
-
     connection.commit()
     cursor.close()
 
@@ -198,7 +192,6 @@ def store_pipeline_metadata(gss_code: str,
         matched_to_register,
         unmatched
     ))
-
     connection.commit()
     cursor.close()
 
@@ -273,7 +266,6 @@ def match_candidate_to_register(utm_x: float,
 
     result = cursor.fetchone()
     cursor.close()
-
     return result[0] if result else None
 
 def detect_register_changes(gss_code: str,
