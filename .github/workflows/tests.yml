@@ -24,6 +24,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DB_NAME: sentinel2_brownfield
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      COPERNICUS_USERNAME: test
+      COPERNICUS_PASSWORD: test
+
     steps:
       - uses: actions/checkout@v4
 
