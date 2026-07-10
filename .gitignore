@@ -7,4 +7,5 @@ data/uk_local_authority_boundaries.geojson
 outputs/*
 !outputs/.gitkeep
 __pycache__/
-.env temp_diagnostic.py
+.env
+temp_diagnostic.py
