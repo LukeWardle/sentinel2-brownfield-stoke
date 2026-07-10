@@ -1,7 +1,7 @@
 numpy
 scipy
 matplotlib
-rasterio==1.4.4
+rasterio
 psycopg2-binary
 python-dotenv
 requests
