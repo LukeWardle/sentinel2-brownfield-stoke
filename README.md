@@ -1,7 +1,7 @@
 # Sentinel-2 Brownfield Site Detection
-### Stoke-on-Trent Planning Intelligence Tool
+### SiteSignal Ltd — Stoke-on-Trent Planning Intelligence Tool
 
-A satellite-based system for identifying potential brownfield land in Stoke-on-Trent using free Sentinel-2 imagery from the Copernicus Data Space Ecosystem. The system automatically downloads satellite images, applies spectral analysis and machine learning to identify candidate brownfield sites, cross-references them against the council's brownfield register, and produces an interactive map for planning officials.
+A satellite-based system for identifying potential brownfield land in Stoke-on-Trent using free Sentinel-2 imagery from the Copernicus Data Space Ecosystem. The system automatically downloads satellite images, applies spectral analysis to identify candidate brownfield sites, cross-references them against the council's brownfield register, and produces an interactive map and PDF report for planning officials.
 
 No commercial tool currently identifies *unregistered* brownfield land from satellite imagery. This system fills that gap.
 
@@ -10,36 +10,39 @@ No commercial tool currently identifies *unregistered* brownfield land from sate
 ## What It Does
 
 1. **Downloads satellite imagery automatically** — authenticates with the Copernicus API and downloads Sentinel-2 L2A SAFE files for any UK council by GSS code and date
-2. **Computes spectral indices** — calculates Bare Soil Index (BSI) and Normalised Difference Vegetation Index (NDVI) across all valid pixels after normalising raw digital numbers to surface reflectance
-3. **Applies PCA spectral decomposition** — reduces 10 spectral bands to the most significant components, capturing 95%+ of spectral variance
-4. **Clusters candidate sites** — groups spectrally similar neighbouring pixels into discrete candidate brownfield sites using connected-component analysis
-5. **Cross-references the brownfield register** — compares candidate sites against Stoke-on-Trent's annual brownfield register stored in PostgreSQL, identifying matched and unregistered sites
-6. **Produces an interactive map** — overlays candidate sites onto OpenStreetMap using Folium, with green markers for register-matched sites and red markers for potential unregistered brownfield
-7. **Stores results in a database** — candidate sites and pipeline run metadata are stored in PostgreSQL for historical comparison and change detection
+2. **Applies AOI clipping** — clips the satellite image to the council boundary retrieved from PostgreSQL, reducing 21 million pixels to ~233,000 for Stoke-on-Trent
+3. **Computes spectral indices** — calculates Bare Soil Index (BSI) and Normalised Difference Vegetation Index (NDVI) across all valid pixels after normalising raw digital numbers to surface reflectance
+4. **Applies PCA spectral decomposition** — reduces 10 spectral bands to the most significant components
+5. **Detects candidate sites** — applies BSI>0.1 and NDVI<0.2 thresholds to identify bare soil candidate pixels, then uses connected-component analysis with morphological dilation to group spatially adjacent candidates into discrete sites
+6. **Cross-references the brownfield register** — compares candidate sites against the brownfield register stored in PostgreSQL using 100m proximity matching
+7. **Produces professional outputs** — interactive Folium map, PDF report and false colour map
+8. **Stores results in database** — candidate sites and pipeline run metadata stored in PostgreSQL for historical comparison
 
 ---
 
-## Results
+## Version 2 Results — Stoke-on-Trent, 25 May 2026
 
-### Version 1 — PCA Spectral Analysis (Complete)
+### Pipeline Performance
+- **21,223,650** valid pixels in full Sentinel-2 tile
+- **233,603** pixels after AOI clipping to Stoke boundary (1.1% of tile)
+- **1,951** brownfield candidate pixels (BSI>0.1, NDVI<0.2)
+- **218** candidate sites after connected-component analysis and size filtering
+- **39** sites matched to the 2024 brownfield register (17.9% recall)
+- **179** potential unregistered brownfield sites identified
 
-Running the Version 1 pipeline on the May 2026 Stoke-on-Trent image:
-- **21,223,650** valid pixels after SCL masking
-- **PC1** — 82.08% variance (brightness)
-- **PC2** — 13.73% variance (vegetation contrast)
-- **PC3** — 1.80% variance (likely brownfield signal)
-- **k=2** components retained at 95% variance threshold
-
+### False Colour Map
 ![False Colour Map](docs/images/false_colour_map.png)
 
-### Version 2 — BSI/NDVI Calibration Finding
+### Candidate Site Locations
+![Candidate Site Locations](docs/images/candidate_site_locations.png)
 
-BSI and NDVI were computed across all valid pixels and extracted at the 217 valid brownfield register site locations. A critical finding emerged:
+### Threshold Calibration
+![Clustering Threshold Comparison](docs/images/clustering_threshold_comparison.png)
 
-- **BSI at register sites:** range -0.26 to 0.17, mean 0.005
-- **NDVI at register sites:** range 0.02 to 0.64, mean 0.21
+### Why 17.9% Recall?
+Registered brownfield sites in Stoke have a mean BSI of 0.005 and NDVI of 0.21 — meaning they are predominantly vegetated at the time of the May 2026 image. The BSI/NDVI threshold approach detects only currently bare land. The 39 matched sites are registered brownfield that happen to be bare in May 2026. The 179 unregistered candidates are bare soil sites not appearing on any register — the primary finding of the system.
 
-Registered brownfield sites do not exhibit simple spectral threshold signatures — they are predominantly vegetated at the time of the May 2026 image. This confirmed that multi-band PCA is the correct primary detection approach rather than index-based thresholding. BSI and NDVI are retained as additional spectral features rather than standalone detectors.
+The Version 3 supervised Random Forest classifier will be trained on all 218 registered sites including vegetated ones, dramatically improving recall.
 
 ---
 
@@ -48,15 +51,15 @@ Registered brownfield sites do not exhibit simple spectral threshold signatures 
 | Version | Status | Description |
 |---|---|---|
 | v1 | ✅ Complete | PCA spectral analysis, false colour map, results report |
-| v2 | 🔄 In Progress | Database, Copernicus API, BSI/NDVI, clustering, interactive map |
-| v3 | Planned | Streamlit web interface, supervised Random Forest classifier, Supabase migration |
+| v2 | ✅ Complete | Database, Copernicus API, BSI/NDVI clustering, interactive map, PDF report |
+| v3 | Planned | Supervised Random Forest classifier, Streamlit web interface, Supabase migration |
 | v4 | Planned | UK-wide multi-council expansion, automated scheduling |
 
 ---
 
 ## Competitive Context
 
-This system addresses a gap not covered by any existing commercial tool. Nimbus Maps, LandTech/LandInsight and SearchLand all overlay the existing brownfield register on a map — they show what is already known. This system identifies brownfield land that does not appear on any register, using satellite spectral analysis validated by the Alan Turing Institute's DemoLand research project.
+Nimbus Maps, LandTech/LandInsight and SearchLand all overlay the existing brownfield register on a map — they show what is already known. This system identifies brownfield land that does not appear on any register, using satellite spectral analysis. The Alan Turing Institute's DemoLand project validated this approach for Newcastle but was never commercialised. No commercial tool currently performs satellite-based unregistered brownfield detection.
 
 ---
 
@@ -65,7 +68,8 @@ This system addresses a gap not covered by any existing commercial tool. Nimbus 
 | Dataset | Source | Notes |
 |---|---|---|
 | Sentinel-2 L2A imagery | Copernicus Data Space Ecosystem | Free, downloaded automatically via API |
-| Brownfield register | DLUHC / data.gov.uk | Annual publication, 218 sites for Stoke-on-Trent |
+| Brownfield register (manual) | DLUHC / data.gov.uk | Annual publication, 218 sites for Stoke-on-Trent 2019-2024 |
+| Brownfield register (automated) | planning.data.gov.uk API | 352 Stoke sites, 85% UK council coverage |
 | UK council boundaries | ONS Open Geography Portal | 361 local authorities, stored in PostgreSQL |
 
 ---
@@ -122,15 +126,21 @@ python scripts/setup_boundaries.py
 python scripts/setup_brownfield.py
 ```
 
+Optionally download latest brownfield data from planning.data.gov.uk:
+
+```bash
+python scripts/download_brownfield_registers.py E06000021
+```
+
 ---
 
 ## Running the Pipeline
 
 ```bash
-python src/main.py
+python src/main.py --gss_code E06000021 --date 2026-05-25
 ```
 
-The pipeline accepts a GSS code and date as inputs, downloads the relevant Sentinel-2 image automatically, and produces outputs in the `outputs/` folder.
+The pipeline accepts any UK council GSS code and image date. It downloads the relevant Sentinel-2 image automatically, processes it, and produces outputs in `outputs/`.
 
 ---
 
@@ -139,8 +149,12 @@ The pipeline accepts a GSS code and date as inputs, downloads the relevant Senti
 Each pipeline run produces three timestamped files in `outputs/`:
 
 - `false_colour_map_YYYYMMDD_HHMMSS.png` — PCA false colour map
-- `results_report_YYYYMMDD_HHMMSS.md` — Plain English results report
-- `interactive_map_GSSODE_YYYYMMDD_HHMMSS.html` — Interactive Folium map of candidate sites
+- `results_report_YYYYMMDD_HHMMSS.pdf` — Professional PDF report for planning officials
+- `interactive_map_GSSCODE_YYYYMMDD_HHMMSS.html` — Interactive Folium map of candidate sites
+
+Results are also stored in PostgreSQL:
+- `candidate_sites` table — all detected sites with coordinates, size and register match status
+- `pipeline_runs` table — run metadata and summary statistics
 
 ---
 
@@ -150,13 +164,26 @@ Each pipeline run produces three timestamped files in `outputs/`:
 python -m pytest tests/ -v
 ```
 
-139 tests passing across 12 modules.
+251 tests passing across 13 modules.
+
+---
+
+## EDA Notebooks
+
+| Notebook | Description |
+|---|---|
+| 01_data_inspection_eda.ipynb | Initial Sentinel-2 data inspection |
+| 02_brownfield_register_eda.ipynb | Brownfield register analysis |
+| 03_boundary_file_eda.ipynb | UK council boundary file analysis |
+| 04_bsi_ndvi_calibration_eda.ipynb | BSI and NDVI calibration — critical finding that registered sites are vegetated |
+| 05_clustering_calibration_eda.ipynb | Clustering algorithm design and threshold calibration |
+| 06_pipeline_results_validation.ipynb | Version 2 pipeline results validation and analysis |
 
 ---
 
 ## Documentation
 
-- [DESIGN.md](DESIGN.md) — Full architecture, module design and Version 2 roadmap
+- [DESIGN.md](DESIGN.md) — Full architecture, module design and Version roadmap
 - [DATABASE.md](DATABASE.md) — PostgreSQL/PostGIS schema design and migration path
 - [EDA.md](EDA.md) — Exploratory data analysis findings
 - [data/README.md](data/README.md) — Data source download instructions
