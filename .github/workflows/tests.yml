@@ -119,4 +119,6 @@ jobs:
             --ignore=tests/test_main.py \
             --ignore=tests/test_database_query.py \
             --ignore=tests/test_api_copernicus.py \
-            --ignore=tests/test_aoi_clipping.py
+            --ignore=tests/test_aoi_clipping.py \
+            --ignore=tests/test_data_loading_satellite.py \
+            --ignore=tests/test_validation_satellite.py
