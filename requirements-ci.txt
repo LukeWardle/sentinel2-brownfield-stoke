@@ -1,0 +1,14 @@
+numpy
+scipy
+matplotlib
+rasterio
+psycopg2-binary
+python-dotenv
+requests
+folium
+pyproj
+reportlab
+pandas
+ijson
+scikit-learn
+pytest
