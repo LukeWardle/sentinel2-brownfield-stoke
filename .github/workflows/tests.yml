@@ -1,0 +1,62 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5
+        env:
+          POSTGRES_PASSWORD: postgres123
+          POSTGRES_DB: sentinel2_brownfield
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create .env file
+        run: |
+          echo "DB_NAME=sentinel2_brownfield" >> .env
+          echo "DB_HOST=127.0.0.1" >> .env
+          echo "DB_PORT=5432" >> .env
+          echo "DB_USER=postgres" >> .env
+          echo "DB_PASSWORD=postgres123" >> .env
+          echo "COPERNICUS_USERNAME=test" >> .env
+          echo "COPERNICUS_PASSWORD=test" >> .env
+
+      - name: Set up database
+        run: |
+          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          python scripts/setup_boundaries.py
+          python scripts/setup_brownfield.py
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --ignore=tests/test_main.py
+
+      - name: Run main tests
+        run: |
+          python -m pytest tests/test_main.py -v
