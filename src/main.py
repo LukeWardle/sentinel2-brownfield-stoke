@@ -241,7 +241,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         print("Running change detection across register years...")
         try:
             change_detection = detect_register_changes(
-                gss_code, 2019, register_year, conn
+                gss_code, 2019, 2024, conn
             )
             print(f"Change detection — added: {len(change_detection['added'])}, "
                   f"removed: {len(change_detection['removed'])}")
@@ -258,7 +258,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         report_creation(
             k, sorted_eigenvalues, output_dir,
             gss_code, image_date,
-            site_properties, change_detection
+            site_properties, change_detection   
         )
 
         print("Generating interactive map...")
