@@ -226,7 +226,7 @@ sentinel2-brownfield-stoke/
 | store_candidate_sites | candidate_sites: list, gss_code: str, image_date: str, run_timestamp: str, connection | None — writes to candidate_sites table | Stores candidate brownfield sites identified by the clustering module. Each site record includes GSS code, image date, run timestamp, UTM coordinates, pixel count, BSI value and register match status. Raises ValueError if candidate_sites is empty |
 | store_pipeline_metadata | gss_code: str, image_date: str, run_timestamp: str, status: str, candidate_sites_found: int, matched_to_register: int, unmatched: int, connection | None — writes to pipeline_runs table | Stores pipeline run metadata after each completed run. Raises ValueError if status is not success or failure or if any count is negative |
 | match_candidate_to_register | utm_x: float, utm_y: float, gss_code: str, year: int, connection, distance_threshold: float = 100.0 | str or None — site_reference of matched register site or None | Checks whether a candidate site UTM coordinate matches any registered brownfield site within distance_threshold metres using PostGIS ST_DWithin. Returns closest matching site_reference or None |
-| detect_register_changes | gss_code: str, year_from: int, year_to: int, connection | dict — containing added and removed lists, each containing site_reference and name_address | Compares brownfield register across two years identifying sites added or removed. Known issue: site reference format mismatch between manual registers (plain numeric) and planning.data.gov.uk data (zero-padded) causes false zero results. Fix scheduled. Raises ValueError if year_from >= year_to or no data for either year |
+| detect_register_changes | gss_code: str, year_from: int, year_to: int, connection | dict — containing added and removed lists, each containing site_reference and name_address | Identifies brownfield register changes using start_date and end_date fields from planning.data.gov.uk data stored in brownfield_sites table. Sites with end_date between year_from and year_to were removed from the register (likely developed). Sites with start_date between year_from and year_to were newly added. For Stoke 2019-2024: 66 sites removed, 119 sites added. Raises ValueError if year_from >= year_to |
 | get_db_connection | None | connection: psycopg2 connection | Creates and returns a single psycopg2 connection using credentials from .env. Called once in main.py and passed into all subsequent database functions |
 
 ### Module: api_copernicus.py — Copernicus API Authentication and SAFE File Download
@@ -275,16 +275,37 @@ SAFE files are 600MB+. Storing permanently for 300+ UK councils would require te
 **[DECISION] Model binaries stored as BYTEA in PostgreSQL**
 Avoids filesystem dependencies when deploying to Supabase in Version 3. Trained Random Forest models are small enough (5-20MB) to store in the database without hitting free tier limits.
 
+**[DECISION] PCA chosen over UMAP, ICA, t-SNE, Random Projection and Autoencoders**
+Sentinel-2 bands are highly correlated — adjacent wavelengths capture similar spectral information. PCA decorrelates them optimally and is the established standard in remote sensing literature for exactly this application. Key reasons for choosing PCA:
+
+- **Interpretability** — PC1 captures overall brightness (82% variance), PC2 captures vegetation contrast (14%), PC3+ captures finer land cover variation. These have direct physical meaning that can be explained to planning officials and Geovation assessors.
+- **Determinism** — PCA always produces the same result for the same input. UMAP and t-SNE are non-deterministic, producing different results on each run, which is incompatible with reproducible pipeline outputs.
+- **Global structure preservation** — PCA preserves global spectral relationships across the full tile. UMAP and t-SNE are designed for local structure and visualisation, not feature extraction. They cannot project new data points consistently, which is required when the pipeline processes a new image.
+- **Speed** — PCA on 21 million pixels via numpy covariance decomposition runs in under 30 seconds on a standard laptop. Autoencoders require GPU training and are overkill for 10 input dimensions.
+- **Established precedent** — PCA is the standard dimensionality reduction approach in multispectral remote sensing. The Alan Turing Institute's DemoLand project and the broader satellite land classification literature use PCA for exactly this purpose.
+
+The variance threshold was lowered from 0.95 to 0.80 with a minimum k=3 enforced in main.py, after finding that k=2 at 0.95 threshold was insufficient to discriminate between urban land cover types within Stoke.
+
+**[DECISION] scipy.ndimage.label chosen over DBSCAN, HDBSCAN and Mean Shift for candidate site grouping**
+The candidate site detection problem is fundamentally a spatial connectivity problem on a regular pixel grid, not a point cloud clustering problem. Key reasons for choosing connected-component labelling:
+
+- **Problem fit** — DBSCAN and HDBSCAN operate on point clouds in feature space, grouping points by spectral similarity. The Version 2 approach applies BSI/NDVI thresholds first to create a binary candidate map, then groups spatially adjacent candidate pixels. Connected-component labelling is the correct algorithm for this — it finds spatially connected regions in a binary grid, which is exactly the operation needed.
+- **Computational complexity** — scipy.ndimage.label is O(n) in the number of pixels. DBSCAN is O(n log n) at best and O(n²) at worst. At 233,603 Stoke pixels after AOI clipping, connected components runs in seconds. DBSCAN at this scale would be significantly slower.
+- **No hyperparameter sensitivity** — DBSCAN requires tuning epsilon (neighbourhood radius) and min_samples. These parameters interact in non-obvious ways and would require calibration per council. Connected components with a fixed minimum pixel size is simpler and more interpretable.
+- **Morphological dilation** — a single iteration of binary_dilation before labelling bridges small gaps between candidate pixels caused by mixed pixels at site edges or minor spectral noise. This is equivalent to what region growing algorithms do but with a single O(n) operation rather than an iterative algorithm.
+- **Mean Shift** — computationally expensive at pixel scale, requires kernel bandwidth tuning, and operates in feature space rather than geographic space.
+
+The original spectral similarity clustering approach used scipy.ndimage.label on all valid pixels — this failed because 21 million pixels form one spatially connected component. The fix was to apply BSI/NDVI thresholds first, creating a sparse binary candidate map before labelling. Full calibration is documented in notebooks/05_clustering_calibration_eda.ipynb.
+
 ---
 
 ## 7. Known Issues and Deferred Work
 
 | Issue | Impact | Scheduled |
 |---|---|---|
-| Change detection site reference format mismatch | Change detection returns 0 results when comparing manual register to planning.data.gov.uk data | Next session |
 | AOI clipping order — occurs after mask_nodata not before | Performance only — results are correct | Version 3 |
-| main.py uses hardcoded safe_path bypass for existing SAFE file | Download not being tested in current test runs | Next session |
-| temp_diagnostic.py not deleted | Minor — added to .gitignore | Next session |
+
+
 
 ---
 
