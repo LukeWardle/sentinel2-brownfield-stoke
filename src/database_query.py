@@ -273,27 +273,25 @@ def detect_register_changes(gss_code: str,
                             year_to: int,
                             connection) -> dict:
     """
-    Compares brownfield register data across two years for a given council,
-    identifying sites that have been added or removed between the two years.
-    Sites removed likely indicate development has taken place. Sites added
-    indicate newly identified brownfield land.
+    Identifies brownfield register changes using start_date and end_date
+    fields from planning.data.gov.uk data. Sites with end_date between
+    year_from and year_to were removed (likely developed). Sites with
+    start_date between year_from and year_to were newly added.
 
     Args:
         gss_code (str): GSS code for the council area to analyse.
         year_from (int): The earlier year to compare from.
         year_to (int): The later year to compare to.
-        connection: Active psycopg2 database connection from
-                    database_query.get_db_connection.
+        connection: Active psycopg2 database connection.
 
     Returns:
         dict: Contains two keys:
-              'removed' — list of dicts for sites in year_from but not year_to,
-              each containing site_reference and name_address.
-              'added' — list of dicts for sites in year_to but not year_from,
+              'removed' — list of dicts for sites removed between years,
+              'added' — list of dicts for sites added between years,
               each containing site_reference and name_address.
 
     Raises:
-        ValueError: If year_from >= year_to or no data exists for either year.
+        ValueError: If year_from >= year_to.
     """
     if year_from >= year_to:
         raise ValueError(
@@ -302,47 +300,34 @@ def detect_register_changes(gss_code: str,
 
     cursor = connection.cursor()
 
-    # Check data exists for both years
-    for year in [year_from, year_to]:
-        cursor.execute(
-            "SELECT COUNT(*) FROM brownfield_sites WHERE gss_code = %s AND year = %s",
-            (gss_code, year)
-        )
-        if cursor.fetchone()[0] == 0:
-            cursor.close()
-            raise ValueError(
-                f"No brownfield register data found for GSS code '{gss_code}' "
-                f"and year {year}"
-            )
-
-    # Sites removed — in year_from but not in year_to
+    # Sites removed — end_date falls between year_from and year_to
     cursor.execute("""
         SELECT site_reference, name_address
         FROM brownfield_sites
-        WHERE gss_code = %s AND year = %s
-        AND site_reference NOT IN (
-            SELECT site_reference FROM brownfield_sites
-            WHERE gss_code = %s AND year = %s
-        )
-        ORDER BY site_reference
-    """, (gss_code, year_from, gss_code, year_to))
+        WHERE gss_code = %s
+        AND year = 2026
+        AND end_date IS NOT NULL
+        AND EXTRACT(YEAR FROM end_date) > %s
+        AND EXTRACT(YEAR FROM end_date) <= %s
+        ORDER BY end_date, site_reference
+    """, (gss_code, year_from, year_to))
 
     removed = [
         {'site_reference': row[0], 'name_address': row[1]}
         for row in cursor.fetchall()
     ]
 
-    # Sites added — in year_to but not in year_from
+    # Sites added — start_date falls between year_from and year_to
     cursor.execute("""
         SELECT site_reference, name_address
         FROM brownfield_sites
-        WHERE gss_code = %s AND year = %s
-        AND site_reference NOT IN (
-            SELECT site_reference FROM brownfield_sites
-            WHERE gss_code = %s AND year = %s
-        )
-        ORDER BY site_reference
-    """, (gss_code, year_to, gss_code, year_from))
+        WHERE gss_code = %s
+        AND year = 2026
+        AND start_date IS NOT NULL
+        AND EXTRACT(YEAR FROM start_date) > %s
+        AND EXTRACT(YEAR FROM start_date) <= %s
+        ORDER BY start_date, site_reference
+    """, (gss_code, year_from, year_to))
 
     added = [
         {'site_reference': row[0], 'name_address': row[1]}

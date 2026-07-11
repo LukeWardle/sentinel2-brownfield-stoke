@@ -176,12 +176,15 @@ def load_sites_into_database(sites: list, gss_code: str, cursor, conn) -> tuple:
             lon, lat = point
             utm_x, utm_y = transformer.transform(lon, lat)
 
+            start_date = site.get('start-date') or None
+            end_date = site.get('end-date') or None
+
             cursor.execute("""
                 INSERT INTO brownfield_sites
                 (site_reference, gss_code, year, name_address, utm_x, utm_y,
-                 hectares, planning_status, location)
+                hectares, planning_status, location, start_date, end_date)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
-                        ST_SetSRID(ST_MakePoint(%s, %s), 32630))
+                        ST_SetSRID(ST_MakePoint(%s, %s), 32630), %s, %s)
                 ON CONFLICT DO NOTHING
             """, (
                 str(site.get('reference', '')),
@@ -193,9 +196,10 @@ def load_sites_into_database(sites: list, gss_code: str, cursor, conn) -> tuple:
                 float(site['hectares']) if site.get('hectares') else None,
                 str(site.get('planning-permission-status', '')),
                 utm_x,
-                utm_y
+                utm_y,
+                start_date,
+                end_date
             ))
-
             conn.commit()
             count += 1
 
