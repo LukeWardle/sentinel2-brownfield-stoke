@@ -17,6 +17,7 @@ import sys
 import json
 import zipfile
 import requests
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -57,7 +58,6 @@ def get_access_token() -> str:
     token = response.json()['access_token']
     return token
 
-
 def get_bounding_box(boundary: dict) -> dict:
     """
     Extracts a simple bounding box from a GeoJSON boundary polygon.
@@ -79,7 +79,6 @@ def get_bounding_box(boundary: dict) -> dict:
         'south': min(lats),
         'north': max(lats)
     }
-
 
 def search_products(gss_code: str,
                     date: str,
@@ -180,15 +179,16 @@ def search_products(gss_code: str,
 
     return products
 
-
 def download_safe(product_id: str,
                   product_name: str,
                   token: str,
-                  output_dir: str) -> str:
+                  output_dir: str,
+                  max_retries: int = 3) -> str:
     """
     Downloads SAFE file zip for the given product ID using the
     Copernicus OData download endpoint, extracts to output_dir and
-    returns the path to the extracted SAFE folder.
+    returns the path to the extracted SAFE folder. Retries up to
+    max_retries times with exponential backoff on network failures.
 
     Args:
         product_id (str): Copernicus product ID returned by search_products,
@@ -198,44 +198,67 @@ def download_safe(product_id: str,
         token (str): Access token returned by get_access_token.
         output_dir (str): Directory to extract the SAFE folder into —
                           typically the project raw_data/ directory.
+        max_retries (int): Maximum number of download attempts before
+                           raising an error. Default 3.
 
     Returns:
         safe_path (str): Full path to the extracted SAFE folder, ready
                          to be passed into data_loading_satellite.load_bands.
 
     Raises:
-        ValueError: If the download request fails, the zip extraction fails,
+        ValueError: If all download attempts fail, the zip extraction fails,
                     or the extracted SAFE folder is missing its expected
                     structure.
     """
+
     url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({product_id})/$value"
     headers = {"Authorization": f"Bearer {token}"}
-
-    session = requests.Session()
-    session.headers.update(headers)
-    response = session.get(url, headers=headers, stream=True)
-
-    if response.status_code != 200:
-        raise ValueError(f"Download failed — status code {response.status_code}")
-
     zip_path = os.path.join(output_dir, f"{product_name}.zip")
 
-    with open(zip_path, "wb") as file:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                file.write(chunk)
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"Download attempt {attempt} of {max_retries}...")
+            session = requests.Session()
+            session.headers.update(headers)
+            response = session.get(url, headers=headers, stream=True)
 
-    try:
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(output_dir)
-    except zipfile.BadZipFile:
-        raise ValueError(f"Downloaded file is not a valid zip — download may have been corrupted")
+            if response.status_code != 200:
+                raise ValueError(f"Download failed — status code {response.status_code}")
 
-    os.remove(zip_path)
+            with open(zip_path, "wb") as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        file.write(chunk)
 
-    safe_path = os.path.join(output_dir, f"{product_name}.SAFE")
+            # Verify zip is valid before extracting
+            try:
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(output_dir)
+            except zipfile.BadZipFile:
+                raise ValueError("Downloaded file is not a valid zip — download may have been corrupted")
 
-    if not os.path.exists(safe_path):
-        raise ValueError(f"Extracted SAFE folder not found at expected path: {safe_path}")
+            os.remove(zip_path)
 
-    return safe_path
+            safe_path = os.path.join(output_dir, f"{product_name}.SAFE")
+
+            if not os.path.exists(safe_path):
+                raise ValueError(f"Extracted SAFE folder not found at expected path: {safe_path}")
+
+            return safe_path
+
+        except (requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as e:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            if attempt < max_retries:
+                wait = 2 ** attempt
+                print(f"Download failed on attempt {attempt} — retrying in {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                raise ValueError(f"Download failed after {max_retries} attempts: {e}")
+
+        except ValueError:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            raise
