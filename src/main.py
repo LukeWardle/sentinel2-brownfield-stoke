@@ -14,53 +14,10 @@ import sys
 import os
 import shutil
 import rasterio
-import argparse
 from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-def get_tile_metadata(safe_path: str) -> dict:
-    """
-    Retrieves the spatial metadata required for converting between
-    UTM coordinates and image pixel coordinates.
-
-    Args:
-        safe_path (str):
-            Path to the Sentinel-2 SAFE folder.
-
-    Returns:
-        dict:
-            Dictionary containing:
-
-            left (float)
-                Western edge of the tile.
-
-            top (float)
-                Northern edge of the tile.
-
-            resolution (int)
-                Pixel size in metres.
-    """
-    granule_dir = Path(safe_path) / "GRANULE"
-
-    granule_name = os.listdir(granule_dir)[0]
-
-    r20m_path = granule_dir / granule_name / "IMG_DATA" / "R20m"
-
-    sample_band = next(
-        f for f in os.listdir(r20m_path)
-        if "_B05_" in f
-    )
-
-    with rasterio.open(r20m_path / sample_band) as src:
-        bounds = src.bounds
-
-    return {
-        "left": bounds.left,
-        "top": bounds.top,
-        "resolution": 20
-    }
 
 from src.api_copernicus import get_access_token, search_products, download_safe
 from src.data_loading_satellite import load_bands, load_scl, bands_20m, bands_10m
@@ -68,7 +25,6 @@ from src.scl_filtering import mask_nodata
 from src.validation_satellite import validate_path, validate_bands, validate_quality
 from src.validation_database import (
     validate_council_boundary_gss,
-    brownfield_data_validation,
     store_candidate_sites_validation,
     store_pipeline_metadata_validation
 )
@@ -88,14 +44,40 @@ from src.database_query import (
 from src.coordinate_conversion_pixel import utm_coordinate_to_pixel
 from src.visualise import convert_k_to_rgb, false_map_creation, report_creation, create_interactive_map
 
+def get_tile_metadata(safe_path: str) -> dict:
+    """
+    Extracts tile metadata from a Sentinel-2 SAFE folder. Reads the left
+    edge, top edge and pixel resolution from a 20m band file using rasterio.
+    Used to convert pixel positions to UTM coordinates throughout the pipeline.
+
+    Args:
+        safe_path (str): Full path to the extracted SAFE folder.
+
+    Returns:
+        dict: Containing left, top and resolution values for coordinate conversion.
+
+    Raises:
+        FileNotFoundError: If the GRANULE directory or B05 band file is missing.
+    """
+    granule_dir = os.path.join(safe_path, "GRANULE")
+    granule_name = os.listdir(granule_dir)[0]
+    r20m_path = os.path.join(granule_dir, granule_name, "IMG_DATA", "R20m")
+    sample_band = [f for f in os.listdir(r20m_path) if "_B05_" in f][0]
+    with rasterio.open(os.path.join(r20m_path, sample_band)) as src:
+        bounds = src.bounds
+        return {
+            "left": bounds.left,
+            "top": bounds.top,
+            "resolution": 20
+        }
 
 def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
     """
     Orchestrates the full Version 2 Sentinel-2 brownfield detection pipeline.
     Downloads the SAFE file automatically via the Copernicus API, processes
     the satellite imagery, identifies candidate brownfield sites, cross-references
-    against the brownfield register, and produces a false colour map, PDF report
-    and interactive map.
+    against the most recent available brownfield register, and produces a false
+    colour map, PDF report and interactive map.
 
     Args:
         gss_code (str): GSS code for the council area to process —
@@ -118,8 +100,8 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
     run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     safe_path = None
     status = 'failure'
+    site_properties = []
 
-    # Open single database connection — passed through all database functions
     conn = get_db_connection()
 
     try:
@@ -160,7 +142,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         validate_bands(masked_array)
         validate_quality(scl_array)
 
-        # --- Step 6: Get tile metadata for coordinate conversion ---
+        # --- Step 6: Get tile metadata ---
         tile_metadata = get_tile_metadata(safe_path)
 
         # --- Step 7: AOI clipping ---
@@ -208,21 +190,11 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
 
         # --- Step 12: Register matching ---
         print("Matching candidate sites against brownfield register...")
-        register_year = int(image_date[:4])
-
-        # Check register data exists for this year, fall back to 2024 if not
-        try:
-            brownfield_data_validation(gss_code, register_year, conn)
-        except ValueError:
-            register_year = 2024
-            print(f"No register data for {image_date[:4]}, using 2024 register")
-
         for site in site_properties:
             site['matched_site_reference'] = match_candidate_to_register(
                 site['centroid_utm_x'],
                 site['centroid_utm_y'],
                 gss_code,
-                register_year,
                 conn
             )
 
@@ -258,7 +230,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         report_creation(
             k, sorted_eigenvalues, output_dir,
             gss_code, image_date,
-            site_properties, change_detection   
+            site_properties, change_detection
         )
 
         print("Generating interactive map...")
@@ -275,20 +247,21 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
     finally:
         # --- Step 16: Store pipeline metadata ---
         try:
-            matched_count = sum(1 for s in site_properties if s.get('matched_site_reference')) \
-                if 'site_properties' in locals() else 0
-            unmatched_count = len(site_properties) - matched_count \
-                if 'site_properties' in locals() else 0
+            matched_count = sum(1 for s in site_properties if s.get('matched_site_reference'))
+            unmatched_count = len(site_properties) - matched_count
 
             store_pipeline_metadata_validation(
                 gss_code, image_date, status,
-                len(site_properties) if 'site_properties' in locals() else 0,
-                matched_count, unmatched_count
+                len(site_properties),
+                matched_count,
+                unmatched_count
             )
             store_pipeline_metadata(
                 gss_code, image_date, run_timestamp, status,
-                len(site_properties) if 'site_properties' in locals() else 0,
-                matched_count, unmatched_count, conn
+                len(site_properties),
+                matched_count,
+                unmatched_count,
+                conn
             )
         except Exception:
             pass
@@ -304,8 +277,8 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         # --- Step 18: Close database connection ---
         conn.close()
 
-
 if __name__ == "__main__":
+    import argparse
     parser = argparse.ArgumentParser(description='SiteSignal Ltd — Brownfield Detection Pipeline')
     parser.add_argument('--gss_code', type=str, default='E06000021',
                         help='GSS code for the council area (default: E06000021 — Stoke-on-Trent)')

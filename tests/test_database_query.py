@@ -126,7 +126,6 @@ def test_match_candidate_returns_site_reference_when_match_found(connection):
         first_site['utm_x'],
         first_site['utm_y'],
         'E06000021',
-        2024,
         connection,
         distance_threshold=50.0
     )
@@ -139,7 +138,6 @@ def test_match_candidate_returns_none_when_no_match(connection):
         700000.0,
         6000000.0,
         'E06000021',
-        2024,
         connection,
         distance_threshold=100.0
     )
@@ -154,7 +152,6 @@ def test_match_candidate_returns_string_or_none(connection):
         first_site['utm_x'],
         first_site['utm_y'],
         'E06000021',
-        2024,
         connection
     )
     assert result is None or isinstance(result, str)
@@ -167,7 +164,6 @@ def test_match_candidate_zero_threshold_returns_none(connection):
         555332.19,  # offset by 1 metre from known site
         5871940.23,
         'E06000021',
-        2024,
         connection,
         distance_threshold=0.0
     )
@@ -179,23 +175,10 @@ def test_match_candidate_large_threshold_finds_match(connection):
         555331.19,
         5871939.23,
         'E06000021',
-        2024,
         connection,
         distance_threshold=50000.0
     )
     assert result is not None
-
-def test_match_candidate_invalid_year_returns_none(connection):
-    """Tests that a year with no register data returns None rather than raising."""
-    result = match_candidate_to_register(
-        555331.19,
-        5871939.23,
-        'E06000021',
-        1900,
-        connection,
-        distance_threshold=100.0
-    )
-    assert result is None
 
 def test_match_candidate_returns_closest_site(connection):
     """Tests that the closest register site is returned when multiple are within threshold."""
@@ -206,34 +189,22 @@ def test_match_candidate_returns_closest_site(connection):
         first_site['utm_x'],
         first_site['utm_y'],
         'E06000021',
-        2024,
         connection,
         distance_threshold=10000.0
     )
     assert result is not None
     assert isinstance(result, str)
 
-def test_match_candidate_different_years_may_differ(connection):
-    """Tests that matching against different years can produce different results."""
-    result_2024 = match_candidate_to_register(
+def test_match_candidate_uses_most_recent_year(connection):
+    """Tests that match_candidate_to_register runs without error using most recent year automatically."""
+    result = match_candidate_to_register(
         555331.19,
         5871939.23,
         'E06000021',
-        2024,
         connection,
         distance_threshold=50000.0
     )
-    result_2019 = match_candidate_to_register(
-        555331.19,
-        5871939.23,
-        'E06000021',
-        2019,
-        connection,
-        distance_threshold=50000.0
-    )
-    # Both should return a string or None — we're testing they run without error
-    assert result_2024 is None or isinstance(result_2024, str)
-    assert result_2019 is None or isinstance(result_2019, str)
+    assert result is None or isinstance(result, str)
 
 # --- detect_register_changes tests ---
 def test_detect_register_changes_returns_dict(connection):

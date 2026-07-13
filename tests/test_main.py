@@ -75,9 +75,10 @@ def mock_data():
             'added': [{'site_reference': 'NEW001', 'name_address': 'New Site'}],
             'removed': [{'site_reference': 'OLD001', 'name_address': 'Old Site'}]
         },
+        'tile_metadata': {'left': 499980.0, 'top': 5900040.0, 'resolution': 20},
         'conn': mock_conn,
         'rasterio_src': mock_rasterio_src,
-    }
+            }
 
 def get_patches(mock_data, safe_path='/tmp/test.SAFE'):
     """Returns a dict of all patches needed for run_pipeline tests."""
@@ -93,6 +94,7 @@ def get_patches(mock_data, safe_path='/tmp/test.SAFE'):
         'src.main.mask_nodata': MagicMock(return_value=(mock_data['masked_array'], mock_data['mask'], mock_data['original_shape'])),
         'src.main.validate_bands': MagicMock(return_value=None),
         'src.main.validate_quality': MagicMock(return_value=None),
+        'src.main.get_tile_metadata': MagicMock(return_value=mock_data['tile_metadata']),
         'src.main.clip_to_council_boundary': MagicMock(return_value=(mock_data['masked_array'], mock_data['mask'])),
         'src.main.normalise_band_array': MagicMock(return_value=mock_data['normalised']),
         'src.main.compute_bsi': MagicMock(return_value=mock_data['bsi']),
@@ -106,7 +108,6 @@ def get_patches(mock_data, safe_path='/tmp/test.SAFE'):
         'src.main.group_pixels_for_candidate_sites': MagicMock(return_value=mock_data['candidate_groups']),
         'src.main.calculate_site_properties': MagicMock(return_value=mock_data['site_properties']),
         'src.main.generate_boundary_polygons': MagicMock(return_value=mock_data['polygons']),
-        'src.main.brownfield_data_validation': MagicMock(return_value=True),
         'src.main.match_candidate_to_register': MagicMock(return_value=None),
         'src.main.store_candidate_sites_validation': MagicMock(return_value=True),
         'src.main.store_candidate_sites': MagicMock(return_value=None),
@@ -117,14 +118,8 @@ def get_patches(mock_data, safe_path='/tmp/test.SAFE'):
         'src.main.false_map_creation': MagicMock(return_value=None),
         'src.main.report_creation': MagicMock(return_value=None),
         'src.main.create_interactive_map': MagicMock(return_value=None),
-        'src.main.get_tile_metadata': MagicMock(
-            return_value={
-                "left": 499980.0,
-                "top": 5900040.0,
-                "resolution": 20
-            }
-        ),
         'src.main.shutil.rmtree': MagicMock(return_value=None),
+        'src.main.os.path.exists': MagicMock(return_value=True),
     }
 
 def run_with_mocks(gss_code, date, output_dir, mock_data, overrides=None):

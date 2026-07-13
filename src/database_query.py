@@ -105,8 +105,8 @@ def store_candidate_sites(candidate_sites: list,
 
     Args:
         candidate_sites (list): List of dicts, one per candidate site, each containing
-                                utm_x, utm_y, pixel_count, bsi_value and
-                                matched_site_reference (None if unmatched).
+                                centroid_utm_x, centroid_utm_y, pixel_count, hectares,
+                                mean_bsi and matched_site_reference (None if unmatched).
         gss_code (str): GSS code for the council area being processed.
         image_date (str): Date of the Sentinel-2 image in YYYY-MM-DD format.
         run_timestamp (str): Timestamp of the pipeline run in YYYY-MM-DD HH:MM:SS format.
@@ -222,19 +222,18 @@ def get_db_connection():
 def match_candidate_to_register(utm_x: float,
                                  utm_y: float,
                                  gss_code: str,
-                                 year: int,
                                  connection,
                                  distance_threshold: float = 100.0) -> str | None:
     """
     Checks whether a candidate site's UTM coordinates match any registered
     brownfield site within the given distance threshold. Uses PostGIS ST_DWithin
-    for efficient spatial proximity checking.
+    for efficient spatial proximity checking. Automatically uses the most recent
+    year of register data available for the given GSS code.
 
     Args:
         utm_x (float): UTM X coordinate of the candidate site centroid in EPSG:32630.
         utm_y (float): UTM Y coordinate of the candidate site centroid in EPSG:32630.
         gss_code (str): GSS code for the council area being processed.
-        year (int): Year of the brownfield register to match against — e.g. 2024.
         connection: Active psycopg2 database connection from
                     database_query.get_db_connection.
         distance_threshold (float): Maximum distance in metres between candidate
@@ -251,7 +250,7 @@ def match_candidate_to_register(utm_x: float,
         SELECT site_reference
         FROM brownfield_sites
         WHERE gss_code = %s
-        AND year = %s
+        AND year = (SELECT MAX(year) FROM brownfield_sites WHERE gss_code = %s)
         AND ST_DWithin(
             location,
             ST_SetSRID(ST_MakePoint(%s, %s), 32630),
@@ -262,7 +261,7 @@ def match_candidate_to_register(utm_x: float,
             ST_SetSRID(ST_MakePoint(%s, %s), 32630)
         ) ASC
         LIMIT 1
-    """, (gss_code, year, utm_x, utm_y, distance_threshold, utm_x, utm_y))
+    """, (gss_code, gss_code, utm_x, utm_y, distance_threshold, utm_x, utm_y))
 
     result = cursor.fetchone()
     cursor.close()
