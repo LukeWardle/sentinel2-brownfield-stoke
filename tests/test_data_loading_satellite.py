@@ -25,7 +25,7 @@ def test_load_bands_missing_band_raises_valueerror(tmp_path):
     granule = tmp_path / "GRANULE" / "fake_granule" / "IMG_DATA"
     (granule / "R20m").mkdir(parents=True)
     (granule / "R10m").mkdir(parents=True)
-    
+
     with pytest.raises(ValueError):
         load_bands(str(tmp_path))
 
@@ -38,15 +38,17 @@ def test_load_bands_invalid_path_raises_error():
 
 def test_load_bands_returns_valid_array(safe_path):
     """
-    Tests that load_bands returns a valid 2D numpy array with correct
-    shape (pixels, 10), dtype uint16 and at least one pixel.
+    Tests that load_bands returns a valid 3D numpy array with correct
+    shape (height, width, 10), dtype uint16 and non-empty spatial dims.
     """
-    # NOTE: This test is specific to Version 1 data — 10 bands, uint16, Sentinel-2 L2A
-    # Will need updating in Version 2 when band selection or data source changes
+    # NOTE: This test is specific to Version 2 data — 10 bands, uint16, Sentinel-2 L2A
+    # on the 20m grid. 3D shape is preserved so AOI clipping can operate on the raw
+    # spatial arrays before mask_nodata flattens them.
     result = load_bands(safe_path)
-    assert result.ndim == 2
-    assert result.shape[1] == 10
+    assert result.ndim == 3
+    assert result.shape[2] == 10
     assert result.shape[0] > 0
+    assert result.shape[1] > 0
     assert result.dtype == np.uint16
 
 def test_load_bands_empty_granule_raises_valueerror(tmp_path):
@@ -59,9 +61,9 @@ def test_load_bands_empty_granule_raises_valueerror(tmp_path):
 
 def test_load_bands_correct_data_arrangement(safe_path):
     """
-    Tests that load_bands correctly arranges data so each row contains
-    10 band readings for one pixel location — not one band across 10 locations.
-    Verifies B05 (column 0) matches direct rasterio load of B05 band.
+    Tests that load_bands correctly arranges data so band_array[row, col, band]
+    holds the reading for one pixel and one band — not scrambled across the grid.
+    Verifies B05 (band index 0) matches a direct rasterio load of the B05 file.
     """
     band_array = load_bands(safe_path)
     # Load B05 directly with rasterio for comparison
@@ -70,30 +72,30 @@ def test_load_bands_correct_data_arrangement(safe_path):
     r20m = os.path.join(granule, granule_name, "IMG_DATA", "R20m")
     b05_file = [f for f in os.listdir(r20m) if "_B05_" in f][0]
     with rasterio.open(os.path.join(r20m, b05_file)) as src:
-        b05_direct = src.read(1).flatten()
-    # B05 is first band loaded — should be column 0
-    assert np.array_equal(band_array[:, 0], b05_direct)
+        b05_direct = src.read(1)
+    # B05 is first band loaded — should be at band index 0 across the full 2D grid
+    assert np.array_equal(band_array[:, :, 0], b05_direct)
 
 # --- _arrange_band_array tests ---
 def test_arrange_band_array_correct_data_arrangement():
     """
-    Tests that _arrange_band_array correctly arranges bands so each row
-    contains readings from one pixel location across all bands.
+    Tests that _arrange_band_array correctly arranges bands so
+    result[row, col, :] contains readings from that pixel across all bands.
     Uses known small arrays to verify correctness without satellite data.
     """
     # Create 3 fake bands of shape (2, 2) with known values
     band1 = np.array([[1, 2], [3, 4]])
     band2 = np.array([[5, 6], [7, 8]])
     band3 = np.array([[9, 10], [11, 12]])
-    
+
     result = _arrange_band_array([band1, band2, band3])
-    
-    # First pixel (top-left) should have readings [1, 5, 9]
-    assert np.array_equal(result[0], [1, 5, 9])
-    # Second pixel (top-right) should have readings [2, 6, 10]
-    assert np.array_equal(result[1], [2, 6, 10])
-    # Shape should be (4 pixels, 3 bands)
-    assert result.shape == (4, 3)
+
+    # Shape should be (height=2, width=2, n_bands=3)
+    assert result.shape == (2, 2, 3)
+    # Top-left pixel (row 0, col 0) should have readings [1, 5, 9]
+    assert np.array_equal(result[0, 0], [1, 5, 9])
+    # Top-right pixel (row 0, col 1) should have readings [2, 6, 10]
+    assert np.array_equal(result[0, 1], [2, 6, 10])
 
 # --- load_scl tests ---
 def test_load_scl_returns_valid_array(safe_path):
