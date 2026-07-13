@@ -23,6 +23,7 @@ def valid_date():
 @pytest.fixture
 def mock_data():
     """Creates all mock data needed for pipeline tests."""
+    height, width = 32, 32
     n_valid = 800
     mock_conn = MagicMock()
     mock_cursor = MagicMock()
@@ -34,6 +35,11 @@ def mock_data():
     mock_rasterio_src.bounds.left = 499980.0
     mock_rasterio_src.bounds.top = 5900040.0
 
+    # mask covers every pixel in the (height, width) grid — 1024 entries for 32x32 —
+    # with n_valid True positions matching the row count of masked_array.
+    mask = np.zeros(height * width, dtype=bool)
+    mask[:n_valid] = True
+
     return {
         'token': 'test_token',
         'product': {
@@ -43,11 +49,13 @@ def mock_data():
             'sensing_date': '2026-05-25T11:06:21Z'
         },
         'safe_path': '/tmp/test.SAFE',
-        'band_array': np.random.rand(1000, 10).astype(np.float32),
-        'scl_array': np.ones((32, 32), dtype=np.uint8) * 4,
-        'mask': np.ones(1000, dtype=bool),
+        'band_array': np.random.randint(0, 10000, (height, width, 10), dtype=np.uint16),
+        'scl_array': np.ones((height, width), dtype=np.uint8) * 4,
+        'clipped_bands': np.random.randint(0, 10000, (height, width, 10), dtype=np.uint16),
+        'clipped_scl': np.ones((height, width), dtype=np.uint8) * 4,
+        'mask': mask,
         'masked_array': np.random.rand(n_valid, 10).astype(np.float32),
-        'original_shape': (32, 32),
+        'original_shape': (height, width),
         'normalised': np.random.rand(n_valid, 10).astype(np.float32),
         'bsi': np.random.uniform(-0.5, 0.5, n_valid),
         'ndvi': np.random.uniform(-0.5, 0.5, n_valid),
@@ -91,11 +99,11 @@ def get_patches(mock_data, safe_path='/tmp/test.SAFE'):
         'src.main.validate_path': MagicMock(return_value=None),
         'src.main.load_bands': MagicMock(return_value=mock_data['band_array']),
         'src.main.load_scl': MagicMock(return_value=mock_data['scl_array']),
+        'src.main.get_tile_metadata': MagicMock(return_value=mock_data['tile_metadata']),
+        'src.main.clip_to_council_boundary': MagicMock(return_value=(mock_data['clipped_bands'], mock_data['clipped_scl'])),
         'src.main.mask_nodata': MagicMock(return_value=(mock_data['masked_array'], mock_data['mask'], mock_data['original_shape'])),
         'src.main.validate_bands': MagicMock(return_value=None),
         'src.main.validate_quality': MagicMock(return_value=None),
-        'src.main.get_tile_metadata': MagicMock(return_value=mock_data['tile_metadata']),
-        'src.main.clip_to_council_boundary': MagicMock(return_value=(mock_data['masked_array'], mock_data['mask'])),
         'src.main.normalise_band_array': MagicMock(return_value=mock_data['normalised']),
         'src.main.compute_bsi': MagicMock(return_value=mock_data['bsi']),
         'src.main.compute_ndvi': MagicMock(return_value=mock_data['ndvi']),
@@ -221,6 +229,31 @@ def test_run_pipeline_calls_aoi_clipping(tmp_path, mock_data):
     """Tests that AOI clipping is called during pipeline execution."""
     mocks = run_with_mocks('E06000021', '2026-05-25', str(tmp_path), mock_data)
     mocks['src.main.clip_to_council_boundary'].assert_called_once()
+
+def test_run_pipeline_aoi_clip_runs_before_mask_nodata(tmp_path, mock_data):
+    """
+    Tests that mask_nodata is called with the arrays returned by
+    clip_to_council_boundary — i.e. clipping runs first and its output
+    is what SCL masking consumes. Uses object identity so the assertion
+    fails if the pipeline reverts to running mask_nodata on the raw arrays.
+    """
+    mocks = run_with_mocks('E06000021', '2026-05-25', str(tmp_path), mock_data)
+
+    mask_call_args = mocks['src.main.mask_nodata'].call_args
+    assert mask_call_args[0][0] is mock_data['clipped_bands']
+    assert mask_call_args[0][1] is mock_data['clipped_scl']
+
+def test_run_pipeline_aoi_clip_receives_raw_arrays(tmp_path, mock_data):
+    """
+    Tests that clip_to_council_boundary is called with the raw arrays
+    returned by load_bands and load_scl — i.e. clipping runs before
+    any masking or flattening.
+    """
+    mocks = run_with_mocks('E06000021', '2026-05-25', str(tmp_path), mock_data)
+
+    clip_call_args = mocks['src.main.clip_to_council_boundary'].call_args
+    assert clip_call_args[0][0] is mock_data['band_array']
+    assert clip_call_args[0][1] is mock_data['scl_array']
 
 def test_run_pipeline_calls_bsi_and_ndvi(tmp_path, mock_data):
     """Tests that BSI and NDVI are computed during pipeline execution."""
