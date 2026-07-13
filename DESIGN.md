@@ -28,9 +28,9 @@ Version 2 is complete and running end-to-end for Stoke-on-Trent. The May 2026 Se
 graph TD
     A[GSS Code + Date Input] --> B[api_copernicus.py: download_safe]
     B --> C[data_loading_satellite.py: load_bands + load_scl]
-    C --> D[scl_filtering.py: mask_nodata]
-    D --> E[validation_satellite.py: validate_bands + validate_quality]
-    E --> F[aoi_clipping.py: clip_to_council_boundary]
+    C --> D[aoi_clipping.py: clip_to_council_boundary]
+    D --> E[scl_filtering.py: mask_nodata]
+    E --> F[validation_satellite.py: validate_bands + validate_quality]
     F --> G[preprocess.py: normalise_band_array]
     G --> H[preprocess.py: compute_bsi + compute_ndvi]
     H --> I[preprocess.py: centre_data + compute_covariance]
@@ -151,14 +151,14 @@ sentinel2-brownfield-stoke/
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| load_bands | safe_path: str | band_array: np.ndarray (pixels, 10) | Loads all 10 Sentinel-2 bands (6 at 20m resampled to 20m, 4 at 10m resampled to 20m) from the SAFE folder. Returns a 2D array where rows are pixels and columns are bands in the order defined by bands_20m + bands_10m. Raises FileNotFoundError if safe_path does not exist or does not end with .SAFE |
+| load_bands | safe_path: str | band_array: np.ndarray (height, width, 10) | Loads all 10 Sentinel-2 bands (6 at 20m native, 4 at 10m bilinearly resampled to 20m) from the SAFE folder. Returns a 3D array where the first two axes index pixel row and column and the third axis holds the 10 band readings in the order defined by bands_20m + bands_10m. The 3D grid is preserved so aoi_clipping can operate on the raw spatial arrays before mask_nodata flattens them. Raises FileNotFoundError if safe_path does not exist |
 | load_scl | safe_path: str | scl_array: np.ndarray (height, width) | Loads the Scene Classification Layer from the SAFE folder at 20m resolution. Returns a 2D array of integer class values used by mask_nodata to remove defective pixels. Raises FileNotFoundError if safe_path does not exist |
 
 ### Module: scl_filtering.py — Remove Defective Pixels
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| mask_nodata | band_array: np.ndarray (pixels, 10), scl_array: np.ndarray (height, width) | masked_array: np.ndarray (valid_pixels, 10), mask: np.ndarray (pixels,), original_shape: tuple | Removes pixels classified as nodata, cloud, cloud shadow, saturated or defective by the SCL. Returns the filtered band array containing only valid pixels, a boolean mask marking valid pixel positions in the original flattened array, and the original 2D shape needed to reconstruct spatial relationships |
+| mask_nodata | band_array_2d: np.ndarray (height, width, 10), scl_array_2d: np.ndarray (height, width) | masked_array: np.ndarray (valid_pixels, 10), mask: np.ndarray (height * width,), original_shape: tuple | Drops nodata (SCL=0) and defective (SCL=1) pixels and flattens the grid to the (valid_pixels, 10) form used by preprocess, PCA and clustering. Out-of-boundary pixels already carry SCL=0 from aoi_clipping so they are removed here in the same pass. Returns the flat masked array, a boolean mask marking valid pixel positions in the flattened grid, and the original 2D shape needed to reconstruct the false colour map |
 
 ### Module: validation_satellite.py — Satellite Image Quality Checks
 
@@ -207,7 +207,7 @@ sentinel2-brownfield-stoke/
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| clip_to_council_boundary | band_array: np.ndarray (pixels, 10), mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict, gss_code: str, connection | tuple: (clipped_array: np.ndarray, clipped_mask: np.ndarray) | Clips the satellite band array to only include pixels that fall within the council boundary retrieved from the database by GSS code. Uses matplotlib.path.Path for vectorised point-in-polygon checking across all valid pixels. Handles MultiPolygon boundaries by checking each polygon separately and combining results. Returns the clipped band array and updated boolean mask. Raises ValueError if no boundary found for the given GSS code |
+| clip_to_council_boundary | band_array_2d: np.ndarray (height, width, 10), scl_array_2d: np.ndarray (height, width), tile_metadata: dict, gss_code: str, connection | tuple: (clipped_bands: np.ndarray (height, width, 10), clipped_scl: np.ndarray (height, width)) | Clips the raw satellite grid to the council boundary retrieved from the database by GSS code. Runs before SCL filtering — the 3D bands and 2D SCL come straight from data_loading_satellite. Uses matplotlib.path.Path for vectorised point-in-polygon checking across every pixel in the tile. Handles MultiPolygon boundaries by checking each polygon separately and combining results with a logical OR. Pixels outside the boundary are zeroed in the band array and set to SCL class 0 in the SCL array so that mask_nodata drops them alongside genuine nodata and defective pixels. Raises ValueError if no boundary found for the given GSS code or geometry type is unsupported |
 
 ### Module: clustering.py — BSI/NDVI Threshold-Based Candidate Site Detection
 
@@ -257,8 +257,8 @@ The original connected-component approach using PCA spectral similarity failed �
 **[DECISION] PCA variance threshold lowered to 0.80 with minimum k=3**
 Original 0.95 threshold gave k=2 (PC1=82%, PC2=14%), insufficient for land cover discrimination within an urban area. k=3 minimum enforced in main.py.
 
-**[DECISION] AOI clip after mask_nodata in current pipeline**
-Architecturally incorrect order — AOI clipping should precede SCL masking for performance. Refactor deferred to Version 3 as it requires rewriting aoi_clipping.py to work on raw 2D arrays before flattening.
+**[DECISION] AOI clip before mask_nodata**
+AOI clipping runs first on the raw 3D band grid and 2D SCL grid from data_loading_satellite. Pixels outside the council boundary have their band values zeroed and their SCL class set to 0, so mask_nodata drops them in the same pass as genuine nodata and defective pixels. For Stoke this means SCL filtering, normalisation, BSI/NDVI, PCA and clustering only see ~233,000 pixels instead of the ~21 million in the full tile — roughly a 90× reduction. As a side effect validate_quality now measures cloud coverage within the council boundary rather than across the full tile, which is the ratio the pipeline actually cares about. The original Version 2 order ran SCL masking first and clipped afterwards, which produced identical results but processed 21 million pixels through every downstream step.
 
 **[DECISION] Morphological dilation iterations=1**
 Single iteration connects nearby candidate pixels across small gaps. iterations=2 was too aggressive, connecting unrelated patches into one massive component.
@@ -301,11 +301,7 @@ The original spectral similarity clustering approach used scipy.ndimage.label on
 
 ## 7. Known Issues and Deferred Work
 
-| Issue | Impact | Scheduled |
-|---|---|---|
-| AOI clipping order — occurs after mask_nodata not before | Performance only — results are correct | Version 3 |
-
-
+No known deferred issues at time of writing.
 
 ---
 
@@ -323,7 +319,6 @@ The original spectral similarity clustering approach used scipy.ndimage.label on
 - Supervised Random Forest classifier trained on register site spectral signatures
 - Streamlit web interface with council selection and results display
 - Supabase migration for hosted database
-- AOI clipping refactor — move before mask_nodata
 - Per-council model training and storage in council_models table
 - Automated brownfield register download and refresh
 

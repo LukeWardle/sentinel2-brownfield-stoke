@@ -7,8 +7,9 @@ false colour map, PDF report and interactive map in outputs/. Accepts a
 GSS code and image date as inputs rather than a manual SAFE path.
 
 All Version 2 modules are called in sequence:
-api_copernicus → data_loading_satellite → scl_filtering → validation_satellite
-→ aoi_clipping → preprocess → pca → clustering → database_query → visualise
+api_copernicus → data_loading_satellite → aoi_clipping → scl_filtering
+→ validation_satellite → preprocess → pca → clustering → database_query
+→ visualise
 """
 import sys
 import os
@@ -131,25 +132,34 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         # --- Step 3: Load satellite data ---
         print("Loading satellite bands...")
         validate_path(safe_path)
-        band_array = load_bands(safe_path)
-        scl_array = load_scl(safe_path)
+        band_array = load_bands(safe_path)   # (height, width, 10)
+        scl_array = load_scl(safe_path)      # (height, width)
 
-        # --- Step 4: SCL filtering ---
+        # --- Step 4: Get tile metadata ---
+        tile_metadata = get_tile_metadata(safe_path)
+
+        # --- Step 5: AOI clipping on the raw grid ---
+        # Runs before SCL masking so downstream processing only sees pixels
+        # inside the council boundary — for Stoke ~233,000 rather than ~21M.
+        print(f"Clipping to council boundary for {gss_code}...")
+        band_array, scl_array = clip_to_council_boundary(
+            band_array, scl_array, tile_metadata, gss_code, conn
+        )
+
+        # --- Step 6: SCL filtering ---
+        # Drops nodata (SCL=0) and defective (SCL=1) pixels. Out-of-boundary
+        # pixels already carry SCL=0 from Step 5, so they are removed here in
+        # the same pass. The 3D grid is flattened to the (valid_pixels, 10)
+        # form used by preprocess, PCA and clustering.
         print("Applying SCL masking...")
         masked_array, mask, original_shape = mask_nodata(band_array, scl_array)
 
-        # --- Step 5: Validate satellite data ---
+        # --- Step 7: Validate satellite data ---
+        # validate_quality now measures cloud coverage within the council
+        # boundary rather than across the full tile, since out-of-boundary
+        # SCL pixels have been zeroed.
         validate_bands(masked_array)
         validate_quality(scl_array)
-
-        # --- Step 6: Get tile metadata ---
-        tile_metadata = get_tile_metadata(safe_path)
-
-        # --- Step 7: AOI clipping ---
-        print(f"Clipping to council boundary for {gss_code}...")
-        masked_array, mask = clip_to_council_boundary(
-            masked_array, mask, original_shape, tile_metadata, gss_code, conn
-        )
 
         # --- Step 8: Normalise band array ---
         print("Normalising band array to surface reflectance...")
