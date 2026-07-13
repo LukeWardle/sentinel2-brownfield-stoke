@@ -26,7 +26,6 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-
 def convert_k_to_rgb(X_reduced: np.ndarray) -> np.ndarray:
     """
     Takes top 3 principal components and normalises to 0-255 range
@@ -63,7 +62,6 @@ def convert_k_to_rgb(X_reduced: np.ndarray) -> np.ndarray:
 
     return rgb_array
 
-
 def false_map_creation(rgb_array: np.ndarray,
                        output_dir: str,
                        mask: np.ndarray = None,
@@ -98,7 +96,6 @@ def false_map_creation(rgb_array: np.ndarray,
     plt.savefig(filepath, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"False colour map saved to {filepath}")
-
 
 def report_creation(k: int,
                     sorted_eigenvalues: np.ndarray,
@@ -370,7 +367,6 @@ def report_creation(k: int,
 
     doc.build(story)
     print(f"PDF report saved to {filepath}")
-
 
 def create_interactive_map(candidate_sites: list,
                            output_dir: str,

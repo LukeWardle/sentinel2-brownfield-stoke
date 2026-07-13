@@ -9,7 +9,6 @@ Also computes the Bare Soil Index (BSI) directly from band_array, using
 bands_20m and bands_10m to locate the correct columns for B02, B04, B08
 and B11.
 """
-
 import numpy as np
 from src.data_loading_satellite import bands_20m, bands_10m
 

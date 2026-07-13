@@ -198,8 +198,7 @@ def generate_boundary_polygons(candidate_groups: dict,
     for site_id, pixel_indices in candidate_groups.items():
         site_grid = np.zeros(original_shape, dtype=bool)
         positions = valid_positions[pixel_indices]
-        for row, col in positions:
-            site_grid[row, col] = True
+        site_grid[positions[:, 0], positions[:, 1]] = True
 
         eroded = scipy.ndimage.binary_erosion(site_grid)
         boundary_grid = site_grid & ~eroded

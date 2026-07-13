@@ -18,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.database_query import get_db_connection
 
-
 def clip_to_council_boundary(band_array: np.ndarray,
                               mask: np.ndarray,
                               original_shape: tuple,

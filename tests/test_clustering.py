@@ -11,25 +11,25 @@ from src.clustering import (
 
 # --- Shared fixtures ---
 def make_simple_mask_and_xreduced():
-    """Creates a 10x10 grid with a block of valid pixels containing high BSI and low NDVI."""
+    """Creates a 10x10 grid with a 6x6 block of valid pixels."""
     original_shape = (10, 10)
     mask_2d = np.zeros(original_shape, dtype=bool)
-    mask_2d[2:8, 2:8] = True  # 6x6 block = 36 valid pixels
+    mask_2d[2:8, 2:8] = True
     mask = mask_2d.flatten()
     n_valid = mask.sum()
     X_reduced = np.random.rand(n_valid, 3)
     return mask, X_reduced, original_shape
 
 def make_bsi_ndvi_above_threshold(n_valid):
-    """Creates BSI and NDVI arrays where all pixels meet the default thresholds."""
-    bsi_array = np.full(n_valid, 0.15)  # above default 0.05
-    ndvi_array = np.full(n_valid, 0.05)  # below default 0.2
+    """Creates BSI and NDVI arrays where all pixels meet default thresholds."""
+    bsi_array = np.full(n_valid, 0.15)
+    ndvi_array = np.full(n_valid, 0.05)
     return bsi_array, ndvi_array
 
 def make_bsi_ndvi_below_threshold(n_valid):
-    """Creates BSI and NDVI arrays where no pixels meet the default thresholds."""
-    bsi_array = np.full(n_valid, -0.1)  # below default 0.05
-    ndvi_array = np.full(n_valid, 0.5)  # above default 0.2
+    """Creates BSI and NDVI arrays where no pixels meet default thresholds."""
+    bsi_array = np.full(n_valid, -0.1)
+    ndvi_array = np.full(n_valid, 0.5)
     return bsi_array, ndvi_array
 
 def make_tile_metadata():
@@ -88,7 +88,7 @@ def test_group_pixels_no_candidates_returns_empty_dict():
     assert result == {}
 
 def test_group_pixels_high_bsi_threshold_reduces_groups():
-    """Tests that a higher BSI threshold produces fewer groups."""
+    """Tests that a higher BSI threshold produces fewer total candidate pixels."""
     mask, X_reduced, original_shape = make_simple_mask_and_xreduced()
     bsi_array = np.random.uniform(0.0, 0.2, mask.sum())
     ndvi_array = np.full(mask.sum(), 0.05)
@@ -100,11 +100,13 @@ def test_group_pixels_high_bsi_threshold_reduces_groups():
         X_reduced, mask, original_shape, bsi_array, ndvi_array,
         bsi_threshold=0.19
     )
-    assert len(result_low) >= len(result_high)
+    total_pixels_low = sum(len(v) for v in result_low.values())
+    total_pixels_high = sum(len(v) for v in result_high.values())
+    assert total_pixels_low >= total_pixels_high
 
 def test_group_pixels_minimum_size_filter():
     """Tests that groups smaller than min_pixels are filtered out."""
-    original_shape = (10, 10)
+    original_shape = (20, 20)
     mask_2d = np.zeros(original_shape, dtype=bool)
     mask_2d[0, 0] = True
     mask_2d[0, 1] = True
@@ -114,7 +116,7 @@ def test_group_pixels_minimum_size_filter():
     ndvi_array = np.full(mask.sum(), 0.05)
     result = group_pixels_for_candidate_sites(
         X_reduced, mask, original_shape, bsi_array, ndvi_array,
-        min_pixels=5
+        min_pixels=10, max_pixels=2500
     )
     assert len(result) == 0
 
@@ -124,13 +126,13 @@ def test_group_pixels_maximum_size_filter():
     bsi_array, ndvi_array = make_bsi_ndvi_above_threshold(mask.sum())
     result = group_pixels_for_candidate_sites(
         X_reduced, mask, original_shape, bsi_array, ndvi_array,
-        min_pixels=5, max_pixels=5
+        min_pixels=1, max_pixels=3
     )
     for site_id, indices in result.items():
-        assert len(indices) <= 5
+        assert len(indices) <= 3
 
 def test_group_pixels_indices_within_valid_range():
-    """Tests that all pixel indices are within the valid range of the masked array."""
+    """Tests that all pixel indices are within the valid range."""
     mask, X_reduced, original_shape = make_simple_mask_and_xreduced()
     bsi_array, ndvi_array = make_bsi_ndvi_above_threshold(mask.sum())
     result = group_pixels_for_candidate_sites(
@@ -143,12 +145,44 @@ def test_group_pixels_indices_within_valid_range():
 def test_group_pixels_default_thresholds():
     """Tests that default BSI and NDVI thresholds are applied correctly."""
     mask, X_reduced, original_shape = make_simple_mask_and_xreduced()
-    bsi_array = np.full(mask.sum(), 0.06)  # just above default 0.05
-    ndvi_array = np.full(mask.sum(), 0.15)  # just below default 0.2
+    bsi_array = np.full(mask.sum(), 0.06)
+    ndvi_array = np.full(mask.sum(), 0.15)
     result = group_pixels_for_candidate_sites(
         X_reduced, mask, original_shape, bsi_array, ndvi_array
     )
     assert isinstance(result, dict)
+
+def test_group_pixels_bsi_exactly_at_threshold_excluded():
+    """Tests that pixels with BSI exactly equal to threshold are excluded."""
+    mask, X_reduced, original_shape = make_simple_mask_and_xreduced()
+    bsi_array = np.full(mask.sum(), 0.05)
+    ndvi_array = np.full(mask.sum(), 0.05)
+    result = group_pixels_for_candidate_sites(
+        X_reduced, mask, original_shape, bsi_array, ndvi_array,
+        bsi_threshold=0.05
+    )
+    assert result == {}
+
+def test_group_pixels_mixed_bsi_values():
+    """Tests that only pixels above BSI threshold are included in groups."""
+    original_shape = (10, 10)
+    mask_2d = np.zeros(original_shape, dtype=bool)
+    mask_2d[2:8, 2:8] = True
+    mask = mask_2d.flatten()
+    n_valid = mask.sum()
+    X_reduced = np.random.rand(n_valid, 3)
+    bsi_array = np.full(n_valid, -0.1)
+    bsi_array[:10] = 0.15
+    ndvi_array = np.full(n_valid, 0.05)
+    result_all = group_pixels_for_candidate_sites(
+        X_reduced, mask, original_shape, bsi_array, ndvi_array,
+        bsi_threshold=0.05, min_pixels=1
+    )
+    result_none = group_pixels_for_candidate_sites(
+        X_reduced, mask, original_shape, bsi_array, ndvi_array,
+        bsi_threshold=0.5, min_pixels=1
+    )
+    assert len(result_all) >= len(result_none)
 
 # --- calculate_site_properties tests ---
 def test_calculate_site_properties_returns_list():
@@ -228,8 +262,14 @@ def test_calculate_site_properties_empty_groups_returns_empty_list():
 
 def test_calculate_site_properties_utm_within_tile_bounds():
     """Tests that centroid UTM coordinates fall within the satellite tile bounds."""
-    mask, X_reduced, original_shape = make_simple_mask_and_xreduced()
-    bsi_array, ndvi_array = make_bsi_ndvi_above_threshold(mask.sum())
+    original_shape = (100, 100)
+    mask_2d = np.zeros(original_shape, dtype=bool)
+    mask_2d[10:20, 10:20] = True
+    mask = mask_2d.flatten()
+    n_valid = mask.sum()
+    X_reduced = np.random.rand(n_valid, 3)
+    bsi_array = np.full(n_valid, 0.15)
+    ndvi_array = np.full(n_valid, 0.05)
     candidate_groups = group_pixels_for_candidate_sites(
         X_reduced, mask, original_shape, bsi_array, ndvi_array
     )
@@ -251,6 +291,31 @@ def test_calculate_site_properties_hectares_correct():
     if result:
         site = result[0]
         assert site['hectares'] == round(site['pixel_count'] * 0.04, 2)
+
+def test_calculate_site_properties_single_pixel_site():
+    """Tests that a single pixel site is handled correctly."""
+    original_shape = (10, 10)
+    mask_2d = np.zeros(original_shape, dtype=bool)
+    mask_2d[5, 5] = True
+    mask = mask_2d.flatten()
+    bsi_array = np.array([0.15])
+    candidate_groups = {0: [0]}
+    tile_metadata = make_tile_metadata()
+    result = calculate_site_properties(candidate_groups, bsi_array, mask, original_shape, tile_metadata)
+    assert len(result) == 1
+    assert result[0]['pixel_count'] == 1
+    assert result[0]['hectares'] == 0.04
+
+def test_calculate_site_properties_count_matches_groups():
+    """Tests that the number of site properties matches the number of groups."""
+    mask, X_reduced, original_shape = make_simple_mask_and_xreduced()
+    bsi_array, ndvi_array = make_bsi_ndvi_above_threshold(mask.sum())
+    candidate_groups = group_pixels_for_candidate_sites(
+        X_reduced, mask, original_shape, bsi_array, ndvi_array
+    )
+    tile_metadata = make_tile_metadata()
+    result = calculate_site_properties(candidate_groups, bsi_array, mask, original_shape, tile_metadata)
+    assert len(result) == len(candidate_groups)
 
 # --- generate_boundary_polygons tests ---
 def test_generate_boundary_polygons_returns_list():
@@ -305,7 +370,7 @@ def test_generate_boundary_polygons_coordinates_are_pairs():
             assert isinstance(coord[1], float)
 
 def test_generate_boundary_polygons_polygon_is_closed():
-    """Tests that each boundary polygon is closed — first and last points are identical."""
+    """Tests that each boundary polygon is closed."""
     mask, X_reduced, original_shape = make_simple_mask_and_xreduced()
     bsi_array, ndvi_array = make_bsi_ndvi_above_threshold(mask.sum())
     candidate_groups = group_pixels_for_candidate_sites(
@@ -334,3 +399,17 @@ def test_generate_boundary_polygons_count_matches_groups():
     tile_metadata = make_tile_metadata()
     result = generate_boundary_polygons(candidate_groups, mask, original_shape, tile_metadata)
     assert len(result) == len(candidate_groups)
+
+def test_generate_boundary_polygons_single_pixel_site():
+    """Tests that a single pixel site produces a boundary or empty list gracefully."""
+    original_shape = (10, 10)
+    mask_2d = np.zeros(original_shape, dtype=bool)
+    mask_2d[5, 5] = True
+    mask = mask_2d.flatten()
+    candidate_groups = {0: [0]}
+    tile_metadata = make_tile_metadata()
+    result = generate_boundary_polygons(candidate_groups, mask, original_shape, tile_metadata)
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert 'site_id' in result[0]
+    assert 'boundary' in result[0]

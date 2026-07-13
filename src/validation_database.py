@@ -15,7 +15,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-
 def validate_council_boundary_gss(gss_code: str, connection) -> bool:
     """
     Validates GSS code format and confirms it exists in the council_boundaries
@@ -57,7 +56,6 @@ def validate_council_boundary_gss(gss_code: str, connection) -> bool:
 
     return True
 
-
 def brownfield_data_validation(gss_code: str, year: int, connection) -> bool:
     """
     Confirms that brownfield register data exists in the brownfield_sites table
@@ -74,8 +72,12 @@ def brownfield_data_validation(gss_code: str, year: int, connection) -> bool:
         bool: True if register data exists for the given GSS code and year.
 
     Raises:
-        ValueError: If no register data found or year is invalid.
+        ValueError: If no register data found, year is invalid, or GSS code
+                    format is invalid.
     """
+    if not re.match(r'^[A-Z]\d{8}$', str(gss_code)):
+        raise ValueError(f"Invalid GSS code format: {gss_code}")
+
     if not isinstance(year, int):
         raise ValueError(f"Year must be an integer, got {type(year)}")
 
@@ -98,11 +100,10 @@ def brownfield_data_validation(gss_code: str, year: int, connection) -> bool:
 
     return True
 
-
 def store_candidate_sites_validation(candidate_sites: list) -> bool:
     """
     Validates candidate site data before database insertion. Checks UTM
-    coordinates are within valid range, pixel counts are positive, and
+    coordinates are within valid UK range, pixel counts are positive, and
     BSI values fall within the expected range of -1 to 1.
 
     Args:
@@ -115,8 +116,8 @@ def store_candidate_sites_validation(candidate_sites: list) -> bool:
 
     Raises:
         ValueError: If candidate_sites is empty, missing required fields,
-                    UTM coordinates are out of range, pixel count is not
-                    positive, or BSI value is outside -1 to 1.
+                    UTM coordinates are outside valid UK range, pixel count
+                    is not positive, or BSI value is outside -1 to 1.
     """
     if not candidate_sites:
         raise ValueError("candidate_sites is empty — nothing to validate")
@@ -142,22 +143,22 @@ def store_candidate_sites_validation(candidate_sites: list) -> bool:
                 f"outside valid range -1 to 1"
             )
 
-        # UK UTM Zone 30N (EPSG:32630) valid bounds
-        # Easting: 0 to 1,000,000 — Northing: 0 to 10,000,000
-        if not (0 <= site['centroid_utm_x'] <= 1000000):
+        # UK UTM Zone 30N (EPSG:32630) valid bounds for Great Britain
+        # Easting: 400,000 to 700,000
+        # Northing: 5,500,000 to 6,400,000
+        if not (400000 <= site['centroid_utm_x'] <= 700000):
             raise ValueError(
                 f"Site at index {i} has UTM X {site['centroid_utm_x']} "
-                f"outside valid range 0-1,000,000"
+                f"outside valid UK range 400,000-700,000"
             )
 
-        if not (0 <= site['centroid_utm_y'] <= 10000000):
+        if not (5500000 <= site['centroid_utm_y'] <= 6400000):
             raise ValueError(
                 f"Site at index {i} has UTM Y {site['centroid_utm_y']} "
-                f"outside valid range 0-10,000,000"
+                f"outside valid UK range 5,500,000-6,400,000"
             )
 
     return True
-
 
 def store_pipeline_metadata_validation(gss_code: str,
                                        image_date: str,

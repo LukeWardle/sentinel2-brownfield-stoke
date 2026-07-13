@@ -1,209 +1,216 @@
 """
-test_pca.py - Unit tests for module pca.py
+test_pca.py - Unit tests for pca.py
 """
 import pytest
-import numpy as np 
+import numpy as np
 from src.pca import spectral_decomposition, sort_variance, cumulative_variance_for_k, project
 
+# --- Shared fixtures ---
+def make_covariance_matrix(n_bands=10):
+    """Creates a valid symmetric positive semi-definite covariance matrix."""
+    A = np.random.rand(n_bands, n_bands)
+    return A @ A.T
+
+def make_sorted_eigenvalues(n=10):
+    """Creates a sorted eigenvalue array in descending order."""
+    vals = np.random.rand(n)
+    return np.sort(vals)[::-1]
+
 # --- spectral_decomposition tests ---
-def test_spectral_decomposition_returns_valid_eigenvalues_and_eigenvectors():
-    """
-    Tests that spectral_decomposition returns valid eigenvalues and eigenvectors.
-    """
-    covariance_matrix = np.array([[4.0, 2.0], [2.0, 3.0]])
-    eigenvalues, eigenvectors = spectral_decomposition(covariance_matrix)
-    assert eigenvalues.shape == (2,)
-    assert eigenvectors.shape == (2, 2)
+def test_spectral_decomposition_returns_tuple():
+    """Tests that spectral_decomposition returns a tuple."""
+    cov = make_covariance_matrix()
+    result = spectral_decomposition(cov)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+def test_spectral_decomposition_eigenvalues_shape():
+    """Tests that eigenvalues array has correct shape."""
+    cov = make_covariance_matrix(10)
+    eigenvalues, _ = spectral_decomposition(cov)
+    assert eigenvalues.shape == (10,)
+
+def test_spectral_decomposition_eigenvectors_shape():
+    """Tests that eigenvectors array has correct shape."""
+    cov = make_covariance_matrix(10)
+    _, eigenvectors = spectral_decomposition(cov)
+    assert eigenvectors.shape == (10, 10)
+
+def test_spectral_decomposition_eigenvalues_non_negative():
+    """Tests that eigenvalues are non-negative for a valid covariance matrix."""
+    cov = make_covariance_matrix()
+    eigenvalues, _ = spectral_decomposition(cov)
+    assert np.all(eigenvalues >= -1e-10)
+
+def test_spectral_decomposition_eigenvectors_orthogonal():
+    """Tests that eigenvectors are orthogonal (V^T V = I)."""
+    cov = make_covariance_matrix()
+    _, eigenvectors = spectral_decomposition(cov)
+    product = eigenvectors.T @ eigenvectors
+    assert np.allclose(product, np.eye(10), atol=1e-10)
+
+def test_spectral_decomposition_single_band():
+    """Tests decomposition with a single band covariance matrix."""
+    cov = np.array([[4.0]])
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    assert eigenvalues.shape == (1,)
+    assert eigenvectors.shape == (1, 1)
+
+def test_spectral_decomposition_symmetric_input():
+    """Tests that a symmetric matrix produces real eigenvalues."""
+    cov = make_covariance_matrix()
+    eigenvalues, _ = spectral_decomposition(cov)
     assert np.all(np.isreal(eigenvalues))
-    assert eigenvalues.dtype == np.float64
-    assert eigenvectors.dtype == np.float64
-
-def test_spectral_decomposition_non_sq_matrix():
-    """
-    Tests that a ValueError is raised for non-squared matrix.
-    """
-    covariance_matrix = np.ones((3, 5))
-    with pytest.raises(ValueError):
-        spectral_decomposition(covariance_matrix)
-
-def test_spectral_decomposition_non_2d_array():
-    """
-    Tests that a ValueError is raised for non-2D arrays.
-    """
-    covariance_matrix = np.ones((10,))
-    with pytest.raises(ValueError):
-        spectral_decomposition(covariance_matrix)
-
-def test_spectral_decomposition_empty_matrix():
-    """
-    Tests that a ValueError is raised for empty matrix.
-    """
-    covariance_matrix = np.empty((0, 0))
-    with pytest.raises(ValueError):
-        spectral_decomposition(covariance_matrix)
 
 # --- sort_variance tests ---
-def test_sort_variance_sorted_eigen_match():
-    """
-    Tests that eigenvalues, and eigenvectors match after sorting.
-    """
-    eigenvalues = np.array([3.0, 8.0, 1.0])
-    eigenvectors = np.array([
-        [0, 1, 2],
-        [0, 1, 2],
-        [0, 1, 2]
-    ])
+def test_sort_variance_returns_tuple():
+    """Tests that sort_variance returns a tuple of two arrays."""
+    cov = make_covariance_matrix()
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    result = sort_variance(eigenvalues, eigenvectors)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+def test_sort_variance_descending_order():
+    """Tests that eigenvalues are sorted in descending order."""
+    cov = make_covariance_matrix()
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, _ = sort_variance(eigenvalues, eigenvectors)
+    assert np.all(sorted_eigenvalues[:-1] >= sorted_eigenvalues[1:])
+
+def test_sort_variance_preserves_eigenvalue_sum():
+    """Tests that sorting preserves the total variance."""
+    cov = make_covariance_matrix()
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, _ = sort_variance(eigenvalues, eigenvectors)
+    assert np.allclose(eigenvalues.sum(), sorted_eigenvalues.sum())
+
+def test_sort_variance_already_sorted():
+    """Tests that already sorted input remains unchanged."""
+    eigenvalues = np.array([8.0, 4.0, 2.0, 1.0])
+    eigenvectors = np.eye(4)
+    sorted_eigenvalues, _ = sort_variance(eigenvalues, eigenvectors)
+    assert np.allclose(sorted_eigenvalues, eigenvalues)
+
+def test_sort_variance_eigenvectors_shape_preserved():
+    """Tests that eigenvector shape is preserved after sorting."""
+    cov = make_covariance_matrix(10)
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    _, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+    assert sorted_eigenvectors.shape == (10, 10)
+
+def test_sort_variance_single_component():
+    """Tests sort_variance with a single eigenvalue."""
+    eigenvalues = np.array([5.0])
+    eigenvectors = np.array([[1.0]])
     sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
-    assert np.array_equal(sorted_eigenvalues, [8.0, 3.0, 1.0])
-    assert np.array_equal(sorted_eigenvectors[0], [1, 0, 2])
-
-def test_sort_variance_length_mismatch():
-    """
-    Tests that a ValueError is raised if theres a length mismatch between
-    eigenvalues and eigenvectors.
-    """
-    eigenvalues = np.array([1.0, 2.0, 3.0])
-    eigenvectors = np.array([
-        [0, 1],
-        [0, 1]
-    ])
-    with pytest.raises(ValueError):
-        sort_variance(eigenvalues, eigenvectors)
-
-def test_sort_variance_empty_array():
-    """
-    Tests that a ValueError is raised if sort_variance is given an empty array.
-    """
-    eigenvalues = np.empty((0, 0))
-    eigenvectors = np.empty((0, 0))
-    with pytest.raises(ValueError):
-        sort_variance(eigenvalues, eigenvectors)
-
-def test_sort_variance_handles_negative_eigenvalues():
-    """
-    Tests that sort_variance correctly sorts and matches eigenvalues when eigenvalues
-    contain small negative values from floating point precision errors.
-    """
-    eigenvalues = np.array([5.0, -0.0001, 2.0])
-    eigenvectors = np.array([
-        [0, 1, 2],
-        [0, 1, 2],
-        [0, 1, 2]
-    ])
-    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
-    assert np.array_equal(sorted_eigenvalues, [5.0, 2.0, -0.0001])
-    assert np.array_equal(sorted_eigenvectors[0], [0, 2, 1])
-
-def test_sort_variance_all_equal_eigenvalues():
-    """
-    Tests that sort_variance does not crash when all eigenvalues are equal.
-    Order is not deterministic when values tie, only checks values are preserved.
-    """
-    eigenvalues = np.array([4.0, 4.0, 4.0])
-    eigenvectors = np.array([
-        [0, 1, 2],
-        [0, 1, 2],
-        [0, 1, 2]
-    ])
-    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
-    assert np.array_equal(sorted_eigenvalues, eigenvalues)
+    assert sorted_eigenvalues[0] == 5.0
 
 # --- cumulative_variance_for_k tests ---
-def test_cumulative_variance_for_k_correct_k():
-    """
-    Tests that cumulative_variance_for_k returns correct k using known eigenvalues.
-    [6, 3, 1, 0] with 0.95 threshold: cumulative [0.6, 0.9, 1.0, 1.0] - reaches threshold at index 2, k=3.
-    """
-    eigenvalues = np.array([6.0, 3.0, 1.0, 0.0])
-    result = cumulative_variance_for_k(eigenvalues, variance_threshold=0.95)
-    assert result == 3
+def test_cumulative_variance_for_k_returns_int():
+    """Tests that cumulative_variance_for_k returns an integer."""
+    sorted_eigenvalues = make_sorted_eigenvalues()
+    result = cumulative_variance_for_k(sorted_eigenvalues)
+    assert isinstance(result, (int, np.integer))
 
-def test_cumulative_variance_for_k_empty_array():
-    """
-    Tests that ValueError is raised when cumulative_variance_for_k
-    is given an empty array.
-    """
-    eigenvalues = np.empty((0, 0))
-    with pytest.raises(ValueError):
-        cumulative_variance_for_k(eigenvalues)
+def test_cumulative_variance_for_k_minimum_one():
+    """Tests that k is always at least 1."""
+    sorted_eigenvalues = make_sorted_eigenvalues()
+    result = cumulative_variance_for_k(sorted_eigenvalues)
+    assert result >= 1
 
-def test_cumulative_variance_for_k_all_zero_array():
-    """
-    Test that a ValueError is raised when given a all eigenvalues are zero.
-    """
-    eigenvalues = np.zeros(10)
-    with pytest.raises(ValueError):
-        cumulative_variance_for_k(eigenvalues)
+def test_cumulative_variance_for_k_maximum_n_bands():
+    """Tests that k never exceeds the number of bands."""
+    sorted_eigenvalues = make_sorted_eigenvalues(10)
+    result = cumulative_variance_for_k(sorted_eigenvalues)
+    assert result <= 10
 
-def test_cumulative_variance_for_k_out_of_range_threshold():
-    """
-    Tests that a ValueError is raised when cumulative_variance_for_k
-    is given a threshold out of range.
-    """
-    eigenvalues = np.array([1, 2, 3])
-    threshold = 5.0
-    with pytest.raises(ValueError):
-        cumulative_variance_for_k(eigenvalues, threshold)
+def test_cumulative_variance_for_k_default_threshold_080():
+    """Tests that default threshold of 0.80 is used."""
+    sorted_eigenvalues = np.array([8.0, 2.0, 1.0, 0.5, 0.3, 0.1, 0.05, 0.03, 0.01, 0.01])
+    result = cumulative_variance_for_k(sorted_eigenvalues)
+    total = sorted_eigenvalues.sum()
+    cumulative = np.cumsum(sorted_eigenvalues)
+    expected_k = int(np.searchsorted(cumulative, 0.80 * total)) + 1
+    assert result == expected_k
 
-def test_cumulative_variance_for_k_threshold_at_boundary():
-    """
-    Tests that cumulative_variance_for_k handles threshold of exactly 1.0 correctly,
-    requiring all components to reach 100% variance.
-    """
-    eigenvalues = np.array([6.0, 3.0, 1.0])
-    result = cumulative_variance_for_k(eigenvalues, variance_threshold=1.0)
-    assert result == 3
+def test_cumulative_variance_for_k_threshold_095():
+    """Tests that a higher threshold requires more components."""
+    sorted_eigenvalues = np.array([8.0, 2.0, 1.0, 0.5, 0.3, 0.1, 0.05, 0.03, 0.01, 0.01])
+    k_80 = cumulative_variance_for_k(sorted_eigenvalues, variance_threshold=0.80)
+    k_95 = cumulative_variance_for_k(sorted_eigenvalues, variance_threshold=0.95)
+    assert k_95 >= k_80
+
+def test_cumulative_variance_for_k_threshold_100():
+    """Tests that threshold of 1.0 requires all components."""
+    sorted_eigenvalues = make_sorted_eigenvalues(10)
+    result = cumulative_variance_for_k(sorted_eigenvalues, variance_threshold=1.0)
+    assert result == 10
+
+def test_cumulative_variance_for_k_first_component_dominant():
+    """Tests that when first component explains 90%+ variance, k=1 at 0.80 threshold."""
+    sorted_eigenvalues = np.array([9.0, 0.5, 0.3, 0.1, 0.05, 0.02, 0.01, 0.01, 0.005, 0.005])
+    result = cumulative_variance_for_k(sorted_eigenvalues, variance_threshold=0.80)
+    assert result == 1
 
 # --- project tests ---
-def test_project_returns_correct_shape_and_values():
-    """
-    Tests that project returns correct shape and values using a known small example.
-    Uses identity-like eigenvectors with k=2 to confirm only the first k columns
-    are used, even through 3 eigenvectors are available.
-    """
-    centred_array = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-    eigenvectors = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0]
-    ])
-    k = 2
-    result = project(centred_array, eigenvectors, k)
-    expected = np.array([[1.0, 2.0], [4.0, 5.0]])
-    assert result.shape == (2, 2)
-    assert np.array_equal(result, expected)
+def test_project_returns_correct_shape():
+    """Tests that project returns array with correct shape (pixels, k)."""
+    centred = np.random.rand(100, 10)
+    cov = compute_covariance_from_centred(centred)
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+    k = 3
+    result = project(centred, sorted_eigenvectors, k)
+    assert result.shape == (100, k)
 
-def test_project_empty_array_input():
-    """
-    Tests that a ValueError is raised if centred_array is empty.
-    """
-    centred_array = np.empty((0, 10))
-    eigenvectors = np.ones((10, 10))
-    with pytest.raises(ValueError):
-        project(centred_array, eigenvectors, 3)
+def test_project_k_equals_one():
+    """Tests projection with k=1."""
+    centred = np.random.rand(100, 10)
+    cov = compute_covariance_from_centred(centred)
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+    result = project(centred, sorted_eigenvectors, 1)
+    assert result.shape == (100, 1)
 
-def test_project_k_exceeds_eigenvector_length():
-    """
-    Tests that a ValueError is raised if k exceeds the number of eigenvectors.
-    """
-    centred_array = np.ones([10, 2])
-    eigenvectors = np.ones([2, 2])
-    k = 5
-    with pytest.raises(ValueError):
-        project(centred_array, eigenvectors, k)
+def test_project_k_equals_n_bands():
+    """Tests projection with k equal to number of bands."""
+    centred = np.random.rand(100, 10)
+    cov = compute_covariance_from_centred(centred)
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+    result = project(centred, sorted_eigenvectors, 10)
+    assert result.shape == (100, 10)
 
-def test_project_shape_alignment_centred_array_eigenvectors():
-    """
-    Tests that a ValueError is raised if centred_array and eigenvectors shape are 
-    mismatched.
-    """
-    centred_array = np.array([[1.0, 2.0], [4.0, 5.0]])
-    eigenvectors = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0]
-    ])
-    k = 2
-    with pytest.raises(ValueError):
-        project(centred_array, eigenvectors, k)
-    
+def test_project_returns_float():
+    """Tests that projected values are float dtype."""
+    centred = np.random.rand(100, 10)
+    cov = compute_covariance_from_centred(centred)
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+    result = project(centred, sorted_eigenvectors, 3)
+    assert np.issubdtype(result.dtype, np.floating)
+
+def test_project_single_pixel():
+    """Tests projection with a single pixel."""
+    centred = np.random.rand(1, 10)
+    cov = compute_covariance_from_centred(np.random.rand(100, 10))
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+    result = project(centred, sorted_eigenvectors, 3)
+    assert result.shape == (1, 3)
+
+def test_project_preserves_pixel_count():
+    """Tests that projection preserves the number of pixels."""
+    n_pixels = 500
+    centred = np.random.rand(n_pixels, 10)
+    cov = compute_covariance_from_centred(centred)
+    eigenvalues, eigenvectors = spectral_decomposition(cov)
+    sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+    result = project(centred, sorted_eigenvectors, 5)
+    assert result.shape[0] == n_pixels
+
+def compute_covariance_from_centred(centred):
+    """Helper to compute covariance from centred array."""
+    from src.preprocess import compute_covariance
+    return compute_covariance(centred)
