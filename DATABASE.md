@@ -37,7 +37,7 @@ CREATE TABLE council_boundaries (
 
 ### 3.2 brownfield_sites
 
-Stores all available years of the brownfield register for any UK council. Populated annually by scripts/setup_brownfield.py for manual register files, or scripts/download_brownfield_registers.py for automated download from planning.data.gov.uk (85% UK council coverage). Coordinates are stored in both their original BNG form (via UTM conversion) and as a PostGIS POINT geometry for spatial queries. The year column allows change detection queries across annual registers without requiring separate tables. A unique constraint on (site_reference, gss_code, year) prevents duplicate entries when running setup or download scripts multiple times.
+Stores all available years of the brownfield register for any UK council. Populated annually by scripts/setup_brownfield.py for manual register files, or scripts/download_brownfield_registers.py for automated download from planning.data.gov.uk (85% UK council coverage). Coordinates are stored in both their original BNG form (via UTM conversion) and as a PostGIS POINT geometry for spatial queries. The year column allows change detection queries across annual registers without requiring separate tables. The start_date and end_date columns are sourced from planning.data.gov.uk and drive detect_register_changes across register years. A unique constraint on (site_reference, gss_code, year) prevents duplicate entries when running setup or download scripts multiple times. A GIST spatial index on the location column accelerates the ST_DWithin proximity query used by match_candidate_to_register during pipeline runs.
 
 ```sql
 CREATE TABLE brownfield_sites (
@@ -46,13 +46,18 @@ CREATE TABLE brownfield_sites (
     gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
     year INTEGER NOT NULL,
     name_address TEXT,
-    utm_x FLOAT,
-    utm_y FLOAT,
-    hectares FLOAT,
+    utm_x DOUBLE PRECISION,
+    utm_y DOUBLE PRECISION,
+    hectares DOUBLE PRECISION,
     planning_status VARCHAR(100),
     location GEOMETRY(POINT, 32630),
+    start_date DATE,
+    end_date DATE,
     CONSTRAINT brownfield_sites_unique UNIQUE (site_reference, gss_code, year)
 );
+
+CREATE INDEX brownfield_sites_location_idx
+    ON brownfield_sites USING GIST (location);
 ```
 
 ### 3.3 candidate_sites
@@ -65,10 +70,10 @@ CREATE TABLE candidate_sites (
     gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
     image_date DATE NOT NULL,
     run_timestamp TIMESTAMP NOT NULL,
-    utm_x FLOAT,
-    utm_y FLOAT,
+    utm_x DOUBLE PRECISION,
+    utm_y DOUBLE PRECISION,
     pixel_count INTEGER,
-    bsi_value FLOAT,
+    bsi_value DOUBLE PRECISION,
     matched_site_reference VARCHAR(50)
 );
 ```
@@ -100,9 +105,9 @@ CREATE TABLE council_models (
     gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
     trained_date DATE NOT NULL,
     training_sites INTEGER,
-    accuracy FLOAT,
-    precision_score FLOAT,
-    recall_score FLOAT,
+    accuracy DOUBLE PRECISION,
+    precision_score DOUBLE PRECISION,
+    recall_score DOUBLE PRECISION,
     image_date DATE,
     model_binary BYTEA
 );
@@ -116,7 +121,7 @@ The diagram below shows the relationships between the five tables. All four data
 
 ## 5. Version Roadmap
 
-In Version 2, the database is the core component of the system and is now fully operational. PostgreSQL with PostGIS replaces the previous file-based workflow and provides a centralised structure for all spatial data. The database stores 361 UK council boundary datasets and brownfield register data for Stoke-on-Trent across six years (2019-2024, 1,308 sites) plus 352 sites from planning.data.gov.uk. The Version 2 pipeline runs end-to-end, detecting 218 candidate brownfield sites for Stoke-on-Trent from the May 2026 Sentinel-2 image, matching 39 to the register and identifying 179 potential unregistered sites. Candidate sites and pipeline run metadata are stored in the database after each run. Change detection across register years is implemented but has a known data quality issue with site reference format differences between manual register files and planning.data.gov.uk data, scheduled for fix in the next development session.
+In Version 2, the database is the core component of the system and is now fully operational. PostgreSQL with PostGIS replaces the previous file-based workflow and provides a centralised structure for all spatial data. The database stores 361 UK council boundary datasets and brownfield register data for Stoke-on-Trent across six years (2019-2024, 1,308 sites) plus 352 sites from planning.data.gov.uk. The Version 2 pipeline runs end-to-end, detecting 218 candidate brownfield sites for Stoke-on-Trent from the May 2026 Sentinel-2 image, matching 39 to the register and identifying 179 potential unregistered sites. Candidate sites and pipeline run metadata are stored in the database after each run. Change detection across register years is implemented and driven by the start_date and end_date columns sourced from planning.data.gov.uk, reporting 66 removed and 119 added sites for Stoke 2019-2024.
 
 In Version 3, the database is extended to support a full web-based application. An API layer is introduced between the database and the frontend, allowing spatial queries to be handled dynamically through PostGIS. Council boundary data becomes automatically downloaded and updated rather than manually imported. Where available, brownfield datasets are also automatically refreshed to ensure the system remains up to date. The council_models table is populated with trained Random Forest classifier models, with model binaries stored as BYTEA directly in the database to avoid filesystem dependencies in the hosted environment. At this stage, the system is migrated from a local PostgreSQL instance to a hosted production database on Supabase, improving scalability and allowing multi-user access.
 
