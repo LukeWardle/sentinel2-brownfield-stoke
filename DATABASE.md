@@ -9,17 +9,23 @@ SQLite was first considered because of its simplicity. However, while SQLite can
 
 The database was introduced in Version 2 so that council boundaries and the current Stoke-on-Trent brownfield data could be stored centrally. PostgreSQL 16 and PostGIS 3.5 were installed locally using Chocolatey, with a development database named sentinel2_brownfield. This provides a single location for storing all spatial datasets and allows additional data sources to be integrated more easily in future versions of the application.
 
-## 2. Local Development Setup
+## 2. Database Connection
 
-The local development database is named sentinel2_brownfield. PostgreSQL is hosted locally using the default address of 127.0.0.1 on port 5432. The default PostgreSQL user account, postgres, is used to connect to the database during development.
+The application connects to PostgreSQL using a single environment variable, DATABASE_URL, containing a libpq connection URI. The same code path connects to any Postgres endpoint that speaks the standard protocol, whether that is a local development installation or a hosted Supabase instance. This removes the need to change source code when moving between environments and matches the twelve-factor convention used by most cloud platforms.
 
-A development password is configured for the local installation. This password is only intended for development purposes and should never be committed to Git or included within the source code. Instead, database credentials should be stored using environment variables or a .env configuration file that is excluded from version control via .gitignore.
+Local development uses a Postgres 16 installation with PostGIS 3.5, configured through Chocolatey. The development database is named sentinel2_brownfield and hosted at 127.0.0.1 on port 5432 under the postgres role. A development password is set in the local installation; this password is only used in development and must never be committed to Git.
 
-The database can be accessed through the PostgreSQL command line tool using the following command:
+Environment variables are loaded from a .env file in the project root, which is excluded from version control via .gitignore. A .env.example file in the repository documents the required variables and expected format. For local development the DATABASE_URL takes the form postgresql://postgres:PASSWORD@localhost:5432/sentinel2_brownfield. For Supabase the URL is provided in the project dashboard under the Connect option and takes the form postgresql://postgres:PASSWORD@db.PROJECTREF.supabase.co:5432/postgres?sslmode=require. The ?sslmode=require suffix forces the psycopg2 driver to negotiate TLS, which Supabase requires for all client connections.
+
+The database can be accessed directly through the PostgreSQL command line tool. For local development:
 
 psql -h 127.0.0.1 -p 5432 -U postgres -d sentinel2_brownfield
 
-When the project is migrated to a hosted environment in Version 3, the database credentials, host address and connection details will differ from the local development configuration. These values will be provided by the hosting provider and configured separately for the production environment.
+For Supabase, use the connection string directly:
+
+psql "$DATABASE_URL"
+
+The single-URL approach also simplifies deployment. The Streamlit application introduced in Version 3 reads the same DATABASE_URL from its own secrets configuration, so no changes to the Python code are required when switching between local development, Supabase development, and Streamlit Cloud production environments.
 
 ## 3. Table Structure
 

@@ -31,6 +31,15 @@ def test_get_db_connection_returns_connection():
     assert conn.closed == 0
     conn.close()
 
+def test_get_db_connection_raises_when_database_url_missing(monkeypatch):
+    """Tests that get_db_connection raises ValueError when DATABASE_URL is
+    not set in the environment. Uses monkeypatch so the env is automatically
+    restored after the test, protecting subsequent tests that need a
+    working connection."""
+    monkeypatch.delenv('DATABASE_URL', raising=False)
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        get_db_connection()
+
 # --- retrieve_council_boundary_gss tests ---
 def test_retrieve_council_boundary_gss_returns_dict(connection):
     """Tests that retrieve_council_boundary_gss returns a dict for a valid GSS code."""
