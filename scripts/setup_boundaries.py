@@ -10,14 +10,18 @@ Usage: python scripts/setup_boundaries.py
 import os
 import json
 import ijson
+import sys
 from decimal import Decimal
 from pathlib import Path
 from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from src.database_query import get_db_connection
 
 load_dotenv()
 
-PROJECT_ROOT = Path(__file__).parent.parent
 BOUNDARY_FILE = PROJECT_ROOT / "data" / "uk_local_authority_boundaries.geojson"
 
 class DecimalEncoder(json.JSONEncoder):
