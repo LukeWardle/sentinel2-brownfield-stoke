@@ -16,7 +16,6 @@ Licence: Open Government Licence v3.0
 import os
 import sys
 import requests
-import psycopg2
 from pyproj import Transformer
 from pathlib import Path
 from dotenv import load_dotenv
@@ -27,18 +26,9 @@ load_dotenv()
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.database_query import get_db_connection
+
 BASE_URL = "https://www.planning.data.gov.uk"
-
-
-def connect_db():
-    """Connects to PostgreSQL database using credentials from .env."""
-    return psycopg2.connect(
-        dbname=os.getenv('DB_NAME'),
-        user=os.getenv('DB_USER'),
-        password=os.getenv('DB_PASSWORD'),
-        host=os.getenv('DB_HOST'),
-        port=os.getenv('DB_PORT')
-    )
 
 
 def get_lpa_entity_id_for_gss(gss_code: str) -> int | None:
@@ -80,7 +70,6 @@ def get_lpa_entity_id_for_gss(gss_code: str) -> int | None:
         return None
 
     return entities[0].get('entity')
-
 
 def fetch_brownfield_sites(lpa_entity_id: int) -> list:
     """
@@ -212,11 +201,10 @@ def load_sites_into_database(sites: list, gss_code: str, cursor, conn) -> tuple:
 
     return count, errors
 
-
 if __name__ == "__main__":
     gss_code_filter = sys.argv[1] if len(sys.argv) > 1 else None
 
-    conn = connect_db()
+    conn = get_db_connection()
     cursor = conn.cursor()
     total_count = 0
     total_errors = 0

@@ -197,24 +197,31 @@ def store_pipeline_metadata(gss_code: str,
 
 def get_db_connection():
     """
-    Creates and returns a connection to the sentinel2_brownfield PostgreSQL database
-    using credentials loaded from .env. Call once in main.py and pass the returned
-    connection into all database_query functions.
+    Creates and returns a connection to the SiteSignal PostgreSQL database
+    using the DATABASE_URL environment variable. Works for any Postgres
+    endpoint that accepts a libpq URI — local Postgres, Supabase, or any
+    other hosted provider. Call once in main.py or a setup script and pass
+    the returned connection into all database functions.
+
+    Expected DATABASE_URL format:
+        postgresql://user:password@host:port/dbname[?options]
+
+    For Supabase, append ?sslmode=require to force TLS. See .env.example.
 
     Returns:
         connection: Active psycopg2 database connection.
 
     Raises:
-        ValueError: If database connection fails.
+        ValueError: If DATABASE_URL is not set, or the connection fails.
     """
-    try:
-        connection = psycopg2.connect(
-            dbname=os.getenv('DB_NAME'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            host=os.getenv('DB_HOST'),
-            port=os.getenv('DB_PORT')
+    db_url = os.getenv('DATABASE_URL')
+    if not db_url:
+        raise ValueError(
+            "DATABASE_URL environment variable is not set. "
+            "Add it to your .env file — see .env.example for the format."
         )
+    try:
+        connection = psycopg2.connect(db_url)
         return connection
     except Exception as e:
         raise ValueError(f"Database connection failed: {e}")
