@@ -337,11 +337,11 @@ def test_create_interactive_map_all_unmatched(tmp_path):
     assert len(html_files) == 1
 
 def test_create_interactive_map_contains_legend(tmp_path):
-    """Tests that the map contains the SiteSignal legend."""
+    """Tests that the map contains the candidate sites legend."""
     create_interactive_map(make_candidate_sites(), str(tmp_path), 'E06000021')
     html_files = list(tmp_path.glob('interactive_map_*.html'))
     content = html_files[0].read_text(encoding='utf-8')
-    assert 'SiteSignal' in content
+    assert 'Brownfield Candidate Sites' in content
 
 def test_create_interactive_map_contains_gss_code_in_content(tmp_path):
     """Tests that the map HTML contains the GSS code."""
