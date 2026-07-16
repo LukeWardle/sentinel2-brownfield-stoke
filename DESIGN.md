@@ -1,5 +1,5 @@
 # Sentinel-2 Brownfield Site Detection — System Design
-Version 2.0 | SiteSignal Ltd | Stoke-on-Trent Planning Intelligence Tool
+Version 2.0 | Brownfield Detection Pipeline | Stoke-on-Trent Planning Intelligence Tool
 
 ## 1. Project Overview
 
@@ -244,8 +244,8 @@ sentinel2-brownfield-stoke/
 |---|---|---|---|
 | convert_k_to_rgb | X_reduced: np.ndarray (pixels, k) | rgb_array: np.ndarray (pixels, 3) | Takes top 3 principal components and normalises to 0-255 range for RGB colour channels. Raises ValueError if fewer than 3 components, empty array, or a component has zero variance |
 | false_map_creation | rgb_array: np.ndarray (pixels, 3), output_dir: str, mask: np.ndarray = None, original_shape: tuple = None | None — saves false_colour_map_YYYYMMDD_HHMMSS.png to outputs/ | Reconstructs the full 2D image placing valid pixels back into their original positions using mask and original_shape, with masked-out pixels rendered as black. Saves as PNG with timestamped filename |
-| report_creation | k: int, sorted_eigenvalues: np.ndarray, output_dir: str, gss_code: str, image_date: str, candidate_sites: list, change_detection: dict | None — saves results_report_YYYYMMDD_HHMMSS.pdf to outputs/ | Generates professional PDF report for planning officials using ReportLab. Includes executive summary, summary statistics table, unregistered candidate sites table (up to 20 sites), change detection summary, disclaimer and SiteSignal Ltd footer. Raises ValueError if candidate_sites is None or change_detection missing required keys |
-| create_interactive_map | candidate_sites: list, output_dir: str, gss_code: str | None — saves interactive_map_GSSCODE_YYYYMMDD_HHMMSS.html to outputs/ | Creates interactive Folium map with OpenStreetMap base layer. Converts candidate site UTM coordinates to lat/long using pyproj. Green markers for register-matched sites, red markers for unregistered candidates. Clickable popups show site type, estimated size in hectares, mean BSI and match status. Includes SiteSignal Ltd legend with matched and unregistered counts. Saves as standalone HTML viewable in any browser |
+| report_creation | k: int, sorted_eigenvalues: np.ndarray, output_dir: str, gss_code: str, image_date: str, candidate_sites: list, change_detection: dict | None — saves results_report_YYYYMMDD_HHMMSS.pdf to outputs/ | Generates professional PDF report for planning officials using ReportLab. Includes executive summary, summary statistics table, unregistered candidate sites table (up to 20 sites), change detection summary, disclaimer and pipeline attribution footer. Raises ValueError if candidate_sites is None or change_detection missing required keys |
+| create_interactive_map | candidate_sites: list, output_dir: str, gss_code: str | None — saves interactive_map_GSSCODE_YYYYMMDD_HHMMSS.html to outputs/ | Creates interactive Folium map with OpenStreetMap base layer. Converts candidate site UTM coordinates to lat/long using pyproj. Green markers for register-matched sites, red markers for unregistered candidates. Clickable popups show site type, estimated size in hectares, mean BSI and match status. Includes legend with matched and unregistered counts. Saves as standalone HTML viewable in any browser |
 
 ---
 
@@ -313,7 +313,7 @@ No known deferred issues at time of writing.
 - BSI/NDVI threshold clustering producing 218 candidate sites for Stoke
 - AOI clipping, register matching, change detection
 - PDF report, interactive Folium map, false colour map
-- 251 tests passing
+- 288 tests passing
 
 **Version 3 (Planned):**
 - Supervised Random Forest classifier trained on register site spectral signatures

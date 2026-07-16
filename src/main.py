@@ -289,7 +289,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='SiteSignal Ltd — Brownfield Detection Pipeline')
+    parser = argparse.ArgumentParser(description='Brownfield Detection Pipeline')
     parser.add_argument('--gss_code', type=str, default='E06000021',
                         help='GSS code for the council area (default: E06000021 — Stoke-on-Trent)')
     parser.add_argument('--date', type=str, default='2026-05-25',
