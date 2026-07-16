@@ -197,7 +197,7 @@ def store_pipeline_metadata(gss_code: str,
 
 def get_db_connection():
     """
-    Creates and returns a connection to the SiteSignal PostgreSQL database
+    Creates and returns a connection to the brownfield detection PostgreSQL database
     using the DATABASE_URL environment variable. Works for any Postgres
     endpoint that accepts a libpq URI — local Postgres, Supabase, or any
     other hosted provider. Call once in main.py or a setup script and pass

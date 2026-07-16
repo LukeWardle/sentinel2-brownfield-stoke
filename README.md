@@ -1,5 +1,5 @@
 # Sentinel-2 Brownfield Site Detection
-### SiteSignal Ltd — Stoke-on-Trent Planning Intelligence Tool
+### Brownfield Detection Pipeline — Stoke-on-Trent Planning Intelligence Tool
 ![Tests](https://github.com/LukeWardle/sentinel2-brownfield-stoke/actions/workflows/tests.yml/badge.svg)
 
 A satellite-based system for identifying potential brownfield land in Stoke-on-Trent using free Sentinel-2 imagery from the Copernicus Data Space Ecosystem. The system automatically downloads satellite images, applies spectral analysis to identify candidate brownfield sites, cross-references them against the council's brownfield register, and produces an interactive map and PDF report for planning officials.
