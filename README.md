@@ -94,21 +94,15 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Create a `.env` file in the project root (never commit this file):
+Copy the template and fill in your values (never commit `.env`):
 
-COPERNICUS_USERNAME=your_email@example.com
+```bash
+cp .env.example .env
+```
 
-COPERNICUS_PASSWORD=yourpassword
-
-DB_NAME=sentinel2_brownfield
-
-DB_HOST=127.0.0.1
-
-DB_PORT=5432
-
-DB_USER=postgres
-
-DB_PASSWORD=yourpassword
+Set two things in `.env`:
+- `COPERNICUS_USERNAME` and `COPERNICUS_PASSWORD` — your Copernicus Data Space account
+- `DATABASE_URL` — a single libpq connection string (local Postgres or Supabase). Percent-encode special characters in the password, e.g. `!` → `%21`. See `.env.example` for the Supabase format.
 
 ### Database Setup
 
