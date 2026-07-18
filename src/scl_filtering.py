@@ -15,7 +15,9 @@ Scene Classification Layers:
       0 = No data, 4 = Vegetation, 5 = Bare soil, 6 = Water,
       8, 9, 10 = Cloud, 11 = Snow
 """
+
 import numpy as np
+
 
 def mask_nodata(band_array_2d: np.ndarray, scl_array_2d: np.ndarray) -> tuple:
     """

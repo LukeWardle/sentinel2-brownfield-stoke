@@ -11,39 +11,59 @@ api_copernicus → data_loading_satellite → aoi_clipping → scl_filtering
 → validation_satellite → preprocess → pca → clustering → database_query
 → visualise
 """
-import sys
+
 import os
 import shutil
-import rasterio
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
+
+import rasterio
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.api_copernicus import get_access_token, search_products, download_safe
-from src.data_loading_satellite import load_bands, load_scl, bands_20m, bands_10m
-from src.scl_filtering import mask_nodata
-from src.validation_satellite import validate_path, validate_bands, validate_quality
-from src.validation_database import (
-    validate_council_boundary_gss,
-    store_candidate_sites_validation,
-    store_pipeline_metadata_validation
-)
 from src.aoi_clipping import clip_to_council_boundary
-from src.preprocess import normalise_band_array, compute_bsi, compute_ndvi, centre_data, compute_covariance
-from src.pca import spectral_decomposition, sort_variance, cumulative_variance_for_k, project
-from src.clustering import group_pixels_for_candidate_sites, calculate_site_properties, generate_boundary_polygons
+from src.api_copernicus import download_safe, get_access_token, search_products
+from src.clustering import (
+    calculate_site_properties,
+    generate_boundary_polygons,
+    group_pixels_for_candidate_sites,
+)
+from src.data_loading_satellite import bands_10m, bands_20m, load_bands, load_scl
 from src.database_query import (
+    detect_register_changes,
     get_db_connection,
-    retrieve_council_boundary_gss,
-    retrieve_brownfield_register_data,
     match_candidate_to_register,
     store_candidate_sites,
     store_pipeline_metadata,
-    detect_register_changes
 )
-from src.coordinate_conversion_pixel import utm_coordinate_to_pixel
-from src.visualise import convert_k_to_rgb, false_map_creation, report_creation, create_interactive_map
+from src.pca import (
+    cumulative_variance_for_k,
+    project,
+    sort_variance,
+    spectral_decomposition,
+)
+from src.preprocess import (
+    centre_data,
+    compute_bsi,
+    compute_covariance,
+    compute_ndvi,
+    normalise_band_array,
+)
+from src.scl_filtering import mask_nodata
+from src.validation_database import (
+    store_candidate_sites_validation,
+    store_pipeline_metadata_validation,
+    validate_council_boundary_gss,
+)
+from src.validation_satellite import validate_bands, validate_path, validate_quality
+from src.visualise import (
+    convert_k_to_rgb,
+    create_interactive_map,
+    false_map_creation,
+    report_creation,
+)
+
 
 def get_tile_metadata(safe_path: str) -> dict:
     """
@@ -66,11 +86,8 @@ def get_tile_metadata(safe_path: str) -> dict:
     sample_band = [f for f in os.listdir(r20m_path) if "_B05_" in f][0]
     with rasterio.open(os.path.join(r20m_path, sample_band)) as src:
         bounds = src.bounds
-        return {
-            "left": bounds.left,
-            "top": bounds.top,
-            "resolution": 20
-        }
+        return {"left": bounds.left, "top": bounds.top, "resolution": 20}
+
 
 def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
     """
@@ -100,7 +117,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
     os.makedirs(output_dir, exist_ok=True)
     run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     safe_path = None
-    status = 'failure'
+    status = "failure"
     site_properties = []
 
     conn = get_db_connection()
@@ -111,29 +128,31 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         validate_council_boundary_gss(gss_code, conn)
 
         # --- Step 2: Download SAFE file via Copernicus API ---
-        print(f"Authenticating with Copernicus API...")
+        print("Authenticating with Copernicus API...")
         token = get_access_token()
 
         print(f"Searching for Sentinel-2 image for {gss_code} on {image_date}...")
         products = search_products(gss_code, image_date, token)
         best_product = products[0]
-        print(f"Found: {best_product['product_name']} — cloud cover: {best_product['cloud_cover']}")
+        print(
+            f"Found: {best_product['product_name']} — cloud cover: {best_product['cloud_cover']}"
+        )
 
         raw_data_dir = str(Path(__file__).parent.parent / "raw_data")
-        print(f"Downloading SAFE file...")
+        print("Downloading SAFE file...")
         safe_path = download_safe(
-            best_product['product_id'],
-            best_product['product_name'],
+            best_product["product_id"],
+            best_product["product_name"],
             token,
-            raw_data_dir
+            raw_data_dir,
         )
         print(f"Downloaded to: {safe_path}")
 
         # --- Step 3: Load satellite data ---
         print("Loading satellite bands...")
         validate_path(safe_path)
-        band_array = load_bands(safe_path)   # (height, width, 10)
-        scl_array = load_scl(safe_path)      # (height, width)
+        band_array = load_bands(safe_path)  # (height, width, 10)
+        scl_array = load_scl(safe_path)  # (height, width)
 
         # --- Step 4: Get tile metadata ---
         tile_metadata = get_tile_metadata(safe_path)
@@ -175,7 +194,9 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         centred_array = centre_data(normalised_array)
         covariance_matrix = compute_covariance(centred_array)
         eigenvalues, eigenvectors = spectral_decomposition(covariance_matrix)
-        sorted_eigenvalues, sorted_eigenvectors = sort_variance(eigenvalues, eigenvectors)
+        sorted_eigenvalues, sorted_eigenvectors = sort_variance(
+            eigenvalues, eigenvectors
+        )
         k = cumulative_variance_for_k(sorted_eigenvalues)
         k = max(k, 3)
         X_reduced = project(centred_array, sorted_eigenvectors, k)
@@ -184,11 +205,15 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         # --- Step 11: Clustering ---
         print("Grouping pixels into candidate sites...")
         candidate_groups = group_pixels_for_candidate_sites(
-            X_reduced, mask, original_shape, bsi_array, ndvi_array,
+            X_reduced,
+            mask,
+            original_shape,
+            bsi_array,
+            ndvi_array,
             bsi_threshold=0.1,
             ndvi_threshold=0.2,
             min_pixels=10,
-            max_pixels=2500
+            max_pixels=2500,
         )
         print(f"Found {len(candidate_groups)} candidate groups")
 
@@ -196,19 +221,18 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
             candidate_groups, bsi_array, mask, original_shape, tile_metadata
         )
 
-        generate_boundary_polygons(candidate_groups, mask, original_shape, tile_metadata)
+        generate_boundary_polygons(
+            candidate_groups, mask, original_shape, tile_metadata
+        )
 
         # --- Step 12: Register matching ---
         print("Matching candidate sites against brownfield register...")
         for site in site_properties:
-            site['matched_site_reference'] = match_candidate_to_register(
-                site['centroid_utm_x'],
-                site['centroid_utm_y'],
-                gss_code,
-                conn
+            site["matched_site_reference"] = match_candidate_to_register(
+                site["centroid_utm_x"], site["centroid_utm_y"], gss_code, conn
             )
 
-        matched = sum(1 for s in site_properties if s.get('matched_site_reference'))
+        matched = sum(1 for s in site_properties if s.get("matched_site_reference"))
         unmatched = len(site_properties) - matched
         print(f"Matched: {matched}, Unregistered candidates: {unmatched}")
 
@@ -222,13 +246,13 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         # --- Step 14: Change detection ---
         print("Running change detection across register years...")
         try:
-            change_detection = detect_register_changes(
-                gss_code, 2019, 2024, conn
+            change_detection = detect_register_changes(gss_code, 2019, 2024, conn)
+            print(
+                f"Change detection — added: {len(change_detection['added'])}, "
+                f"removed: {len(change_detection['removed'])}"
             )
-            print(f"Change detection — added: {len(change_detection['added'])}, "
-                  f"removed: {len(change_detection['removed'])}")
         except ValueError:
-            change_detection = {'added': [], 'removed': []}
+            change_detection = {"added": [], "removed": []}
             print("Insufficient register data for change detection")
 
         # --- Step 15: Generate outputs ---
@@ -238,40 +262,51 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
 
         print("Generating PDF report...")
         report_creation(
-            k, sorted_eigenvalues, output_dir,
-            gss_code, image_date,
-            site_properties, change_detection
+            k,
+            sorted_eigenvalues,
+            output_dir,
+            gss_code,
+            image_date,
+            site_properties,
+            change_detection,
         )
 
         print("Generating interactive map...")
         create_interactive_map(site_properties, output_dir, gss_code)
 
-        status = 'success'
+        status = "success"
         print(f"Pipeline complete — status: {status}")
 
     except Exception as e:
         print(f"Pipeline failed: {e}")
-        status = 'failure'
+        status = "failure"
         raise
 
     finally:
         # --- Step 16: Store pipeline metadata ---
         try:
-            matched_count = sum(1 for s in site_properties if s.get('matched_site_reference'))
+            matched_count = sum(
+                1 for s in site_properties if s.get("matched_site_reference")
+            )
             unmatched_count = len(site_properties) - matched_count
 
             store_pipeline_metadata_validation(
-                gss_code, image_date, status,
-                len(site_properties),
-                matched_count,
-                unmatched_count
-            )
-            store_pipeline_metadata(
-                gss_code, image_date, run_timestamp, status,
+                gss_code,
+                image_date,
+                status,
                 len(site_properties),
                 matched_count,
                 unmatched_count,
-                conn
+            )
+            store_pipeline_metadata(
+                gss_code,
+                image_date,
+                run_timestamp,
+                status,
+                len(site_properties),
+                matched_count,
+                unmatched_count,
+                conn,
             )
         except Exception:
             pass
@@ -279,24 +314,37 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         # --- Step 17: Delete SAFE file ---
         if safe_path and os.path.exists(safe_path):
             outer_safe = str(Path(safe_path).parent)
-            if os.path.exists(outer_safe) and outer_safe.endswith('.SAFE'):
+            if os.path.exists(outer_safe) and outer_safe.endswith(".SAFE"):
                 shutil.rmtree(outer_safe, ignore_errors=True)
-            elif os.path.exists(safe_path) and safe_path.endswith('.SAFE'):
+            elif os.path.exists(safe_path) and safe_path.endswith(".SAFE"):
                 shutil.rmtree(safe_path, ignore_errors=True)
 
         # --- Step 18: Close database connection ---
         conn.close()
 
+
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Brownfield Detection Pipeline')
-    parser.add_argument('--gss_code', type=str, default='E06000021',
-                        help='GSS code for the council area (default: E06000021 — Stoke-on-Trent)')
-    parser.add_argument('--date', type=str, default='2026-05-25',
-                        help='Image date in YYYY-MM-DD format (default: 2026-05-25)')
-    parser.add_argument('--output_dir', type=str,
-                        default=str(Path(__file__).parent.parent / "outputs"),
-                        help='Output directory (default: outputs/)')
+
+    parser = argparse.ArgumentParser(description="Brownfield Detection Pipeline")
+    parser.add_argument(
+        "--gss_code",
+        type=str,
+        default="E06000021",
+        help="GSS code for the council area (default: E06000021 — Stoke-on-Trent)",
+    )
+    parser.add_argument(
+        "--date",
+        type=str,
+        default="2026-05-25",
+        help="Image date in YYYY-MM-DD format (default: 2026-05-25)",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=str(Path(__file__).parent.parent / "outputs"),
+        help="Output directory (default: outputs/)",
+    )
     args = parser.parse_args()
 
     run_pipeline(args.gss_code, args.date, args.output_dir)

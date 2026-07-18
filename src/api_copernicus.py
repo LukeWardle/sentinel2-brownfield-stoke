@@ -12,13 +12,15 @@ SAFE folder to the raw_data directory ready for pipeline processing.
 Credentials are loaded from .env and must never be hardcoded or committed
 to version control.
 """
+
+import json
 import os
 import sys
-import json
-import zipfile
-import requests
 import time
+import zipfile
 from pathlib import Path
+
+import requests
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -41,22 +43,23 @@ def get_access_token() -> str:
     Raises:
         ValueError: If authentication fails.
     """
-    username = os.getenv('COPERNICUS_USERNAME')
-    password = os.getenv('COPERNICUS_PASSWORD')
+    username = os.getenv("COPERNICUS_USERNAME")
+    password = os.getenv("COPERNICUS_PASSWORD")
     response = requests.post(
         "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
         data={
             "client_id": "cdse-public",
             "username": username,
             "password": password,
-            "grant_type": "password"
-        }
+            "grant_type": "password",
+        },
     )
     if response.status_code != 200:
         raise ValueError(f"Authentication failed — status code {response.status_code}")
 
-    token = response.json()['access_token']
+    token = response.json()["access_token"]
     return token
+
 
 def get_bounding_box(boundary: dict) -> dict:
     """
@@ -70,20 +73,20 @@ def get_bounding_box(boundary: dict) -> dict:
     Returns:
         bbox (dict): Bounding box containing west, east, south, north coordinates.
     """
-    coordinates = boundary['coordinates'][0]
+    coordinates = boundary["coordinates"][0]
     lons = [coord[0] for coord in coordinates]
     lats = [coord[1] for coord in coordinates]
     return {
-        'west': min(lons),
-        'east': max(lons),
-        'south': min(lats),
-        'north': max(lats)
+        "west": min(lons),
+        "east": max(lons),
+        "south": min(lats),
+        "north": max(lats),
     }
 
-def search_products(gss_code: str,
-                    date: str,
-                    token: str,
-                    cloud_threshold: float = 0.10) -> list:
+
+def search_products(
+    gss_code: str, date: str, token: str, cloud_threshold: float = 0.10
+) -> list:
     """
     Queries Copernicus OData catalogue for Sentinel-2 L2A products matching the
     council area (retrieved from database by GSS code), date and cloud cover
@@ -108,11 +111,14 @@ def search_products(gss_code: str,
     """
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT ST_AsGeoJSON(boundary)
         FROM council_boundaries
         WHERE gss_code = %s
-    """, (gss_code,))
+    """,
+        (gss_code,),
+    )
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -158,7 +164,7 @@ def search_products(gss_code: str,
 
     data = response.json()
 
-    if not data.get('value'):
+    if not data.get("value"):
         raise ValueError(
             f"No products found for GSS code {gss_code} on {date} "
             f"with cloud cover below {cloud_threshold * 100}%"
@@ -166,24 +172,31 @@ def search_products(gss_code: str,
 
     products = [
         {
-            'product_id': item['Id'],
-            'product_name': item['Name'].removesuffix('.SAFE'),
-            'cloud_cover': next(
-                (attr['Value'] for attr in item.get('Attributes', [])
-                 if attr['Name'] == 'cloudCover'), None
+            "product_id": item["Id"],
+            "product_name": item["Name"].removesuffix(".SAFE"),
+            "cloud_cover": next(
+                (
+                    attr["Value"]
+                    for attr in item.get("Attributes", [])
+                    if attr["Name"] == "cloudCover"
+                ),
+                None,
             ),
-            'sensing_date': item['ContentDate']['Start']
+            "sensing_date": item["ContentDate"]["Start"],
         }
-        for item in data['value']
+        for item in data["value"]
     ]
 
     return products
 
-def download_safe(product_id: str,
-                  product_name: str,
-                  token: str,
-                  output_dir: str,
-                  max_retries: int = 3) -> str:
+
+def download_safe(
+    product_id: str,
+    product_name: str,
+    token: str,
+    output_dir: str,
+    max_retries: int = 3,
+) -> str:
     """
     Downloads SAFE file zip for the given product ID using the
     Copernicus OData download endpoint, extracts to output_dir and
@@ -211,7 +224,9 @@ def download_safe(product_id: str,
                     structure.
     """
 
-    url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({product_id})/$value"
+    url = (
+        f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({product_id})/$value"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     zip_path = os.path.join(output_dir, f"{product_name}.zip")
 
@@ -223,7 +238,9 @@ def download_safe(product_id: str,
             response = session.get(url, headers=headers, stream=True)
 
             if response.status_code != 200:
-                raise ValueError(f"Download failed — status code {response.status_code}")
+                raise ValueError(
+                    f"Download failed — status code {response.status_code}"
+                )
 
             with open(zip_path, "wb") as file:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -232,28 +249,36 @@ def download_safe(product_id: str,
 
             # Verify zip is valid before extracting
             try:
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
                     zip_ref.extractall(output_dir)
             except zipfile.BadZipFile:
-                raise ValueError("Downloaded file is not a valid zip — download may have been corrupted")
+                raise ValueError(
+                    "Downloaded file is not a valid zip — download may have been corrupted"
+                )
 
             os.remove(zip_path)
 
             safe_path = os.path.join(output_dir, f"{product_name}.SAFE")
 
             if not os.path.exists(safe_path):
-                raise ValueError(f"Extracted SAFE folder not found at expected path: {safe_path}")
+                raise ValueError(
+                    f"Extracted SAFE folder not found at expected path: {safe_path}"
+                )
 
             return safe_path
 
-        except (requests.exceptions.ChunkedEncodingError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as e:
+        except (
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as e:
             if os.path.exists(zip_path):
                 os.remove(zip_path)
             if attempt < max_retries:
-                wait = 2 ** attempt
-                print(f"Download failed on attempt {attempt} — retrying in {wait}s: {e}")
+                wait = 2**attempt
+                print(
+                    f"Download failed on attempt {attempt} — retrying in {wait}s: {e}"
+                )
                 time.sleep(wait)
             else:
                 raise ValueError(f"Download failed after {max_retries} attempts: {e}")

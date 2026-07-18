@@ -104,6 +104,17 @@ Set two things in `.env`:
 - `COPERNICUS_USERNAME` and `COPERNICUS_PASSWORD` — your Copernicus Data Space account
 - `DATABASE_URL` — a single libpq connection string (local Postgres or Supabase). Percent-encode special characters in the password, e.g. `!` → `%21`. See `.env.example` for the Supabase format.
 
+### Pre-commit hooks
+
+This repo runs pre-commit to scan for secrets (gitleaks) and enforce
+formatting (ruff, black) before every commit. After cloning:
+
+    pip install pre-commit
+    pre-commit install
+
+Hooks then run automatically on `git commit`. Run them across all files
+manually with: `pre-commit run --all-files`.
+
 ### Database Setup
 
 Create the database and enable PostGIS:

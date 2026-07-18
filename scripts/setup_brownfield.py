@@ -7,10 +7,11 @@ Run once after database creation, then annually when a new register is published
 
 Usage: python scripts/setup_brownfield.py
 """
-import os
+
 import sys
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,8 +19,8 @@ load_dotenv()
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.database_query import get_db_connection
 from src.coordinate_conversion_pixel import convert_bng_to_utm
+from src.database_query import get_db_connection
 
 REGISTER_FILES = {
     2019: PROJECT_ROOT / "data" / "brownfield_register_2019.csv",
@@ -32,6 +33,7 @@ REGISTER_FILES = {
 
 GSS_CODE = sys.argv[1] if len(sys.argv) > 1 else "E06000021"
 
+
 def load_register(year: int, filepath: Path, cursor, conn):
     """Loads a single year's brownfield register into the brownfield_sites table."""
     print(f"Loading {year} register from {filepath.name}...")
@@ -42,24 +44,27 @@ def load_register(year: int, filepath: Path, cursor, conn):
 
     for idx, row in df.iterrows():
         try:
-            utm = convert_bng_to_utm(row['GeoX'], row['GeoY'])
+            utm = convert_bng_to_utm(row["GeoX"], row["GeoY"])
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO brownfield_sites 
                 (site_reference, gss_code, year, name_address, utm_x, utm_y, hectares, planning_status, location)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 32630))
-            """, (
-                str(row.get('SiteReference', '')),
-                GSS_CODE,
-                year,
-                str(row.get('SiteNameAddress', '')),
-                utm['x'],
-                utm['y'],
-                float(row['Hectares']) if pd.notna(row.get('Hectares')) else None,
-                str(row.get('PlanningStatus', '')),
-                utm['x'],
-                utm['y']
-            ))
+            """,
+                (
+                    str(row.get("SiteReference", "")),
+                    GSS_CODE,
+                    year,
+                    str(row.get("SiteNameAddress", "")),
+                    utm["x"],
+                    utm["y"],
+                    float(row["Hectares"]) if pd.notna(row.get("Hectares")) else None,
+                    str(row.get("PlanningStatus", "")),
+                    utm["x"],
+                    utm["y"],
+                ),
+            )
 
             conn.commit()
             count += 1
@@ -71,6 +76,7 @@ def load_register(year: int, filepath: Path, cursor, conn):
 
     print(f"  {year}: {count} sites loaded, {errors} errors")
     return count, errors
+
 
 def load_all_registers():
     """Loads all available years of the brownfield register."""
@@ -90,7 +96,10 @@ def load_all_registers():
 
     cursor.close()
     conn.close()
-    print(f"\nComplete — {total_count} sites loaded across all years, {total_errors} errors")
+    print(
+        f"\nComplete — {total_count} sites loaded across all years, {total_errors} errors"
+    )
+
 
 if __name__ == "__main__":
     load_all_registers()

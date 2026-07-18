@@ -13,12 +13,15 @@ pipeline results to the database after each run.
 Credentials are loaded from .env and must never be hardcoded or committed
 to version control.
 """
-import os
-import psycopg2
+
 import json
+import os
+
+import psycopg2
 from dotenv import load_dotenv
 
 load_dotenv()
+
 
 def retrieve_council_boundary_gss(gss_code: str, connection) -> dict:
     """
@@ -40,11 +43,14 @@ def retrieve_council_boundary_gss(gss_code: str, connection) -> dict:
         ValueError: If no boundary is found for the given GSS code.
     """
     cursor = connection.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT ST_AsGeoJSON(ST_Transform(ST_SetSRID(boundary, 4326), 32630))
         FROM council_boundaries
         WHERE gss_code = %s
-    """, (gss_code,))
+    """,
+        (gss_code,),
+    )
     result = cursor.fetchone()
     cursor.close()
     if result is None:
@@ -52,6 +58,7 @@ def retrieve_council_boundary_gss(gss_code: str, connection) -> dict:
 
     boundary_polygon = json.loads(result[0])
     return boundary_polygon
+
 
 def retrieve_brownfield_register_data(gss_code: str, year: int, connection) -> list:
     """
@@ -76,28 +83,35 @@ def retrieve_brownfield_register_data(gss_code: str, year: int, connection) -> l
     """
     cursor = connection.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT site_reference, utm_x, utm_y
         FROM brownfield_sites
         WHERE gss_code = %s AND year = %s
-    """, (gss_code, year))
+    """,
+        (gss_code, year),
+    )
     results = cursor.fetchall()
     cursor.close()
     if not results:
-        raise ValueError(f"No brownfield register data found for GSS code {gss_code} and year {year}")
+        raise ValueError(
+            f"No brownfield register data found for GSS code {gss_code} and year {year}"
+        )
 
     register_sites = [
-        {"site_reference": row[0], "utm_x": row[1], "utm_y": row[2]}
-        for row in results
+        {"site_reference": row[0], "utm_x": row[1], "utm_y": row[2]} for row in results
     ]
 
     return register_sites
 
-def store_candidate_sites(candidate_sites: list,
-                          gss_code: str,
-                          image_date: str,
-                          run_timestamp: str,
-                          connection) -> None:
+
+def store_candidate_sites(
+    candidate_sites: list,
+    gss_code: str,
+    image_date: str,
+    run_timestamp: str,
+    connection,
+) -> None:
     """
     Stores candidate brownfield sites identified by the clustering module into the
     candidate_sites table. Each site record includes GSS code, image date,
@@ -124,31 +138,37 @@ def store_candidate_sites(candidate_sites: list,
     cursor = connection.cursor()
 
     for site in candidate_sites:
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO candidate_sites
             (gss_code, image_date, run_timestamp, utm_x, utm_y, pixel_count, bsi_value, matched_site_reference)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            gss_code,
-            image_date,
-            run_timestamp,
-            site['centroid_utm_x'],
-            site['centroid_utm_y'],
-            site['pixel_count'],
-            site['mean_bsi'],
-            site.get('matched_site_reference', None)
-        ))
+        """,
+            (
+                gss_code,
+                image_date,
+                run_timestamp,
+                site["centroid_utm_x"],
+                site["centroid_utm_y"],
+                site["pixel_count"],
+                site["mean_bsi"],
+                site.get("matched_site_reference", None),
+            ),
+        )
     connection.commit()
     cursor.close()
 
-def store_pipeline_metadata(gss_code: str,
-                            image_date: str,
-                            run_timestamp: str,
-                            status: str,
-                            candidate_sites_found: int,
-                            matched_to_register: int,
-                            unmatched: int,
-                            connection) -> None:
+
+def store_pipeline_metadata(
+    gss_code: str,
+    image_date: str,
+    run_timestamp: str,
+    status: str,
+    candidate_sites_found: int,
+    matched_to_register: int,
+    unmatched: int,
+    connection,
+) -> None:
     """
     Stores pipeline run metadata into the pipeline_runs table after each completed
     run. Records council, image date, timestamp, success or failure status,
@@ -171,29 +191,35 @@ def store_pipeline_metadata(gss_code: str,
     Raises:
         ValueError: If status is not 'success' or 'failure', or if any count is negative.
     """
-    if status not in ('success', 'failure'):
+    if status not in ("success", "failure"):
         raise ValueError(f"Invalid status '{status}' — must be 'success' or 'failure'")
 
-    if any(count < 0 for count in [candidate_sites_found, matched_to_register, unmatched]):
+    if any(
+        count < 0 for count in [candidate_sites_found, matched_to_register, unmatched]
+    ):
         raise ValueError("Candidate site counts cannot be negative")
 
     cursor = connection.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO pipeline_runs
         (gss_code, image_date, run_timestamp, status, candidate_sites_found, matched_to_register, unmatched)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """, (
-        gss_code,
-        image_date,
-        run_timestamp,
-        status,
-        candidate_sites_found,
-        matched_to_register,
-        unmatched
-    ))
+    """,
+        (
+            gss_code,
+            image_date,
+            run_timestamp,
+            status,
+            candidate_sites_found,
+            matched_to_register,
+            unmatched,
+        ),
+    )
     connection.commit()
     cursor.close()
+
 
 def get_db_connection():
     """
@@ -214,7 +240,7 @@ def get_db_connection():
     Raises:
         ValueError: If DATABASE_URL is not set, or the connection fails.
     """
-    db_url = os.getenv('DATABASE_URL')
+    db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError(
             "DATABASE_URL environment variable is not set. "
@@ -225,12 +251,15 @@ def get_db_connection():
         return connection
     except Exception as e:
         raise ValueError(f"Database connection failed: {e}")
-    
-def match_candidate_to_register(utm_x: float,
-                                 utm_y: float,
-                                 gss_code: str,
-                                 connection,
-                                 distance_threshold: float = 100.0) -> str | None:
+
+
+def match_candidate_to_register(
+    utm_x: float,
+    utm_y: float,
+    gss_code: str,
+    connection,
+    distance_threshold: float = 100.0,
+) -> str | None:
     """
     Checks whether a candidate site's UTM coordinates match any registered
     brownfield site within the given distance threshold. Uses PostGIS ST_DWithin
@@ -253,7 +282,8 @@ def match_candidate_to_register(utm_x: float,
     """
     cursor = connection.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT site_reference
         FROM brownfield_sites
         WHERE gss_code = %s
@@ -268,16 +298,18 @@ def match_candidate_to_register(utm_x: float,
             ST_SetSRID(ST_MakePoint(%s, %s), 32630)
         ) ASC
         LIMIT 1
-    """, (gss_code, gss_code, utm_x, utm_y, distance_threshold, utm_x, utm_y))
+    """,
+        (gss_code, gss_code, utm_x, utm_y, distance_threshold, utm_x, utm_y),
+    )
 
     result = cursor.fetchone()
     cursor.close()
     return result[0] if result else None
 
-def detect_register_changes(gss_code: str,
-                            year_from: int,
-                            year_to: int,
-                            connection) -> dict:
+
+def detect_register_changes(
+    gss_code: str, year_from: int, year_to: int, connection
+) -> dict:
     """
     Identifies brownfield register changes using start_date and end_date
     fields from planning.data.gov.uk data. Sites with end_date between
@@ -307,7 +339,8 @@ def detect_register_changes(gss_code: str,
     cursor = connection.cursor()
 
     # Sites removed — end_date falls between year_from and year_to
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT site_reference, name_address
         FROM brownfield_sites
         WHERE gss_code = %s
@@ -316,15 +349,17 @@ def detect_register_changes(gss_code: str,
         AND EXTRACT(YEAR FROM end_date) > %s
         AND EXTRACT(YEAR FROM end_date) <= %s
         ORDER BY end_date, site_reference
-    """, (gss_code, year_from, year_to))
+    """,
+        (gss_code, year_from, year_to),
+    )
 
     removed = [
-        {'site_reference': row[0], 'name_address': row[1]}
-        for row in cursor.fetchall()
+        {"site_reference": row[0], "name_address": row[1]} for row in cursor.fetchall()
     ]
 
     # Sites added — start_date falls between year_from and year_to
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT site_reference, name_address
         FROM brownfield_sites
         WHERE gss_code = %s
@@ -333,16 +368,14 @@ def detect_register_changes(gss_code: str,
         AND EXTRACT(YEAR FROM start_date) > %s
         AND EXTRACT(YEAR FROM start_date) <= %s
         ORDER BY start_date, site_reference
-    """, (gss_code, year_from, year_to))
+    """,
+        (gss_code, year_from, year_to),
+    )
 
     added = [
-        {'site_reference': row[0], 'name_address': row[1]}
-        for row in cursor.fetchall()
+        {"site_reference": row[0], "name_address": row[1]} for row in cursor.fetchall()
     ]
 
     cursor.close()
 
-    return {
-        'removed': removed,
-        'added': added
-    }
+    return {"removed": removed, "added": added}
