@@ -3,11 +3,12 @@ test_validation_satellite.py - Unit tests for module validation_satellite.py
 
 """
 
-import pytest
-import os
-import numpy as np
-from src.validation_satellite import validate_path, validate_bands, validate_quality
 from pathlib import Path
+
+import numpy as np
+import pytest
+
+from src.validation_satellite import validate_bands, validate_path, validate_quality
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -55,7 +56,7 @@ def test_validate_bands_valid_array():
     """
     arr = np.ones((100, 10))
     result = validate_bands(arr)
-    assert result == True
+    assert result
 
 
 def test_validate_bands_1D_array():
@@ -102,7 +103,7 @@ def test_validate_quality_valid_scl_low_cloud():
     """
     scl = np.full((10, 10), 4, dtype=np.uint8)  # all vegetation (value 4), no cloud
     result = validate_quality(scl)
-    assert result == True
+    assert result
 
 
 def test_validate_quality_cloud_coverage_exceeds_threshold():

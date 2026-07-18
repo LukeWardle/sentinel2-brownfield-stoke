@@ -14,15 +14,20 @@ logical OR. Pixels outside the boundary have their band values zeroed
 and their SCL class set to 0 (nodata) so that mask_nodata will drop
 them alongside genuinely defective pixels.
 """
+
 import json
+
 import numpy as np
 from matplotlib.path import Path as MplPath
 
-def clip_to_council_boundary(band_array_2d: np.ndarray,
-                             scl_array_2d: np.ndarray,
-                             tile_metadata: dict,
-                             gss_code: str,
-                             connection) -> tuple:
+
+def clip_to_council_boundary(
+    band_array_2d: np.ndarray,
+    scl_array_2d: np.ndarray,
+    tile_metadata: dict,
+    gss_code: str,
+    connection,
+) -> tuple:
     """
     Clips the raw satellite arrays to the council boundary retrieved
     from PostGIS by GSS code. Runs before SCL filtering, so takes the
@@ -64,11 +69,14 @@ def clip_to_council_boundary(band_array_2d: np.ndarray,
     """
     # Retrieve council boundary in EPSG:32630 (UTM) from database
     cursor = connection.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT ST_AsGeoJSON(ST_Transform(boundary, 32630))
         FROM council_boundaries
         WHERE gss_code = %s
-    """, (gss_code,))
+    """,
+        (gss_code,),
+    )
     result = cursor.fetchone()
     cursor.close()
 
@@ -80,9 +88,9 @@ def clip_to_council_boundary(band_array_2d: np.ndarray,
     # Build UTM coordinates for every pixel in the tile.
     # xs_2d[row, col] holds the UTM x for that pixel, ys_2d[row, col] the UTM y.
     height, width = scl_array_2d.shape
-    left = tile_metadata['left']
-    top = tile_metadata['top']
-    resolution = tile_metadata['resolution']
+    left = tile_metadata["left"]
+    top = tile_metadata["top"]
+    resolution = tile_metadata["resolution"]
 
     utm_x_per_col = left + np.arange(width) * resolution
     utm_y_per_row = top - np.arange(height) * resolution
@@ -91,13 +99,13 @@ def clip_to_council_boundary(band_array_2d: np.ndarray,
 
     # Check which pixels fall within the council boundary.
     # Handles both Polygon and MultiPolygon geometry types.
-    geometry_type = boundary['type']
+    geometry_type = boundary["type"]
     inside = np.zeros(len(pixel_utm_coords), dtype=bool)
 
-    if geometry_type == 'Polygon':
-        polygons = [boundary['coordinates']]
-    elif geometry_type == 'MultiPolygon':
-        polygons = boundary['coordinates']
+    if geometry_type == "Polygon":
+        polygons = [boundary["coordinates"]]
+    elif geometry_type == "MultiPolygon":
+        polygons = boundary["coordinates"]
     else:
         raise ValueError(f"Unsupported geometry type: {geometry_type}")
 
@@ -108,10 +116,10 @@ def clip_to_council_boundary(band_array_2d: np.ndarray,
         # Bounding box pre-filter — eliminates the majority of tile pixels
         # instantly before running the expensive point-in-polygon check.
         bbox_mask = (
-            (pixel_utm_coords[:, 0] >= exterior_coords[:, 0].min()) &
-            (pixel_utm_coords[:, 0] <= exterior_coords[:, 0].max()) &
-            (pixel_utm_coords[:, 1] >= exterior_coords[:, 1].min()) &
-            (pixel_utm_coords[:, 1] <= exterior_coords[:, 1].max())
+            (pixel_utm_coords[:, 0] >= exterior_coords[:, 0].min())
+            & (pixel_utm_coords[:, 0] <= exterior_coords[:, 0].max())
+            & (pixel_utm_coords[:, 1] >= exterior_coords[:, 1].min())
+            & (pixel_utm_coords[:, 1] <= exterior_coords[:, 1].max())
         )
 
         # Only run precise point-in-polygon check on pixels inside the bbox

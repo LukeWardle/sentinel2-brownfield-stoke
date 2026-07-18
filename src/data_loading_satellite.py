@@ -16,12 +16,15 @@ Native resolutions:
   R20m — B05, B06, B07, B8A, B11, B12
   R10m — B02, B03, B04, B08 (bilinearly resampled to 20m)
 """
+
 import os
+
 import numpy as np
 import rasterio
 
 bands_20m = ["B05", "B06", "B07", "B8A", "B11", "B12"]
 bands_10m = ["B02", "B03", "B04", "B08"]
+
 
 def _arrange_band_array(loaded_bands: list) -> np.ndarray:
     """
@@ -39,6 +42,7 @@ def _arrange_band_array(loaded_bands: list) -> np.ndarray:
                     by pixel row, pixel column, then band.
     """
     return np.stack(loaded_bands, axis=-1)
+
 
 def load_bands(safe_path: str) -> np.ndarray:
     """
@@ -64,7 +68,9 @@ def load_bands(safe_path: str) -> np.ndarray:
     granule_path = os.path.join(safe_path, "GRANULE")
     granule_contents = os.listdir(granule_path)
     if not granule_contents:
-        raise ValueError(f"GRANULE folder is empty - no granule found in {granule_path}")
+        raise ValueError(
+            f"GRANULE folder is empty - no granule found in {granule_path}"
+        )
     granule_name = granule_contents[0]
     img_data_path = os.path.join(granule_path, granule_name, "IMG_DATA")
     r20m_path = os.path.join(img_data_path, "R20m")
@@ -109,8 +115,11 @@ def load_bands(safe_path: str) -> np.ndarray:
 
     shapes = [b.shape for b in loaded_bands]
     if len(set(shapes)) > 1:
-        raise ValueError(f"Band shape mismatch after loading - shapes found: {set(shapes)}")
+        raise ValueError(
+            f"Band shape mismatch after loading - shapes found: {set(shapes)}"
+        )
     return _arrange_band_array(loaded_bands)
+
 
 def load_scl(safe_path: str) -> np.ndarray:
     """
@@ -137,7 +146,9 @@ def load_scl(safe_path: str) -> np.ndarray:
     granule_path = os.path.join(safe_path, "GRANULE")
     granule_contents = os.listdir(granule_path)
     if not granule_contents:
-        raise ValueError(f"GRANULE folder is empty - no granule found in {granule_path}")
+        raise ValueError(
+            f"GRANULE folder is empty - no granule found in {granule_path}"
+        )
     granule_name = granule_contents[0]
     img_data_path = os.path.join(granule_path, granule_name, "IMG_DATA")
     r20m_path = os.path.join(img_data_path, "R20m")

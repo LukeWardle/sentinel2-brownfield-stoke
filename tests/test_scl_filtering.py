@@ -2,8 +2,11 @@
 test_scl_filtering.py - Unit tests for module scl_filtering.py
 
 """
+
 import numpy as np
+
 from src.scl_filtering import mask_nodata
+
 
 # --- mask_nodata tests ---
 def test_mask_nodata_removes_nodata_pixels():
@@ -20,6 +23,7 @@ def test_mask_nodata_removes_nodata_pixels():
     assert mask.sum() == 6
     assert original_shape == (3, 3)
 
+
 def test_mask_nodata_returns_correct_output_shapes():
     """
     Tests that mask_nodata returns a 2D flat masked array with the correct
@@ -27,9 +31,7 @@ def test_mask_nodata_returns_correct_output_shapes():
     and the original 2D grid shape as a tuple.
     """
     band_array = np.ones((3, 3, 10))
-    scl_array = np.array(
-        [[0, 4, 4], [0, 4, 4], [4, 0, 4]], dtype=np.uint8
-    )
+    scl_array = np.array([[0, 4, 4], [0, 4, 4], [4, 0, 4]], dtype=np.uint8)
     result, mask, original_shape = mask_nodata(band_array, scl_array)
     assert result.ndim == 2
     assert result.shape[1] == 10
@@ -38,6 +40,7 @@ def test_mask_nodata_returns_correct_output_shapes():
     assert isinstance(original_shape, tuple)
     assert original_shape == (3, 3)
 
+
 def test_mask_nodata_flat_output_preserves_pixel_band_correspondence():
     """
     Tests that the 3D-to-flat reshape preserves pixel-band correspondence
@@ -45,14 +48,20 @@ def test_mask_nodata_flat_output_preserves_pixel_band_correspondence():
     band values so any ordering bug in the reshape or masking would show
     as mismatched rows.
     """
-    band_array = np.array([
-        [[1, 2, 3], [4, 5, 6]],       # row 0: pixel (0,0)=[1,2,3], pixel (0,1)=[4,5,6]
-        [[7, 8, 9], [10, 11, 12]]     # row 1: pixel (1,0)=[7,8,9], pixel (1,1)=[10,11,12]
-    ])
+    band_array = np.array(
+        [
+            [[1, 2, 3], [4, 5, 6]],  # row 0: pixel (0,0)=[1,2,3], pixel (0,1)=[4,5,6]
+            [
+                [7, 8, 9],
+                [10, 11, 12],
+            ],  # row 1: pixel (1,0)=[7,8,9], pixel (1,1)=[10,11,12]
+        ]
+    )
     scl_array = np.array([[4, 0], [4, 4]], dtype=np.uint8)  # drop pixel (0,1)
     result, _, _ = mask_nodata(band_array, scl_array)
     expected = np.array([[1, 2, 3], [7, 8, 9], [10, 11, 12]])
     assert np.array_equal(result, expected)
+
 
 def test_mask_nodata_drops_scl_class_1():
     """
@@ -60,10 +69,13 @@ def test_mask_nodata_drops_scl_class_1():
     class 0 (nodata).
     """
     band_array = np.ones((2, 2, 10))
-    scl_array = np.array([[4, 1], [0, 4]], dtype=np.uint8)  # 2 valid, 1 defective, 1 nodata
+    scl_array = np.array(
+        [[4, 1], [0, 4]], dtype=np.uint8
+    )  # 2 valid, 1 defective, 1 nodata
     result, mask, _ = mask_nodata(band_array, scl_array)
     assert result.shape[0] == 2
     assert mask.sum() == 2
+
 
 def test_mask_nodata_all_valid_returns_all_pixels():
     """
@@ -76,6 +88,7 @@ def test_mask_nodata_all_valid_returns_all_pixels():
     assert result.shape[0] == 4
     assert mask.sum() == 4
     assert np.array_equal(result, band_array.reshape(4, 10))
+
 
 def test_mask_nodata_all_scl_zero_returns_empty():
     """

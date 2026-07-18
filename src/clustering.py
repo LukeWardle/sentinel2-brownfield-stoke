@@ -10,18 +10,22 @@ mean BSI value and centroid UTM coordinates for each group.
 generate_boundary_polygons traces the outline of each group and converts
 pixel positions to UTM coordinates for database storage and Folium map display.
 """
+
 import numpy as np
 import scipy.ndimage
 
-def group_pixels_for_candidate_sites(X_reduced: np.ndarray,
-                                     mask: np.ndarray,
-                                     original_shape: tuple,
-                                     bsi_array: np.ndarray,
-                                     ndvi_array: np.ndarray,
-                                     bsi_threshold: float = 0.05,
-                                     ndvi_threshold: float = 0.2,
-                                     min_pixels: int = 5,
-                                     max_pixels: int = 2500) -> dict:
+
+def group_pixels_for_candidate_sites(
+    X_reduced: np.ndarray,
+    mask: np.ndarray,
+    original_shape: tuple,
+    bsi_array: np.ndarray,
+    ndvi_array: np.ndarray,
+    bsi_threshold: float = 0.05,
+    ndvi_threshold: float = 0.2,
+    min_pixels: int = 5,
+    max_pixels: int = 2500,
+) -> dict:
     """
     Identifies candidate brownfield pixels using BSI and NDVI thresholds
     then groups spatially adjacent candidates into discrete sites using
@@ -59,13 +63,17 @@ def group_pixels_for_candidate_sites(X_reduced: np.ndarray,
     # Step 1 — identify brownfield candidate pixels using BSI and NDVI thresholds
     brownfield_candidates = (bsi_array > bsi_threshold) & (ndvi_array < ndvi_threshold)
     if len(bsi_array) > 0:
-        print(f"Brownfield candidate pixels: {brownfield_candidates.sum():,} "
-            f"({brownfield_candidates.sum() / len(bsi_array) * 100:.1f}% of valid pixels)")
+        print(
+            f"Brownfield candidate pixels: {brownfield_candidates.sum():,} "
+            f"({brownfield_candidates.sum() / len(bsi_array) * 100:.1f}% of valid pixels)"
+        )
     else:
         print("Brownfield candidate pixels: 0 (empty array)")
 
     if brownfield_candidates.sum() == 0:
-        print("No brownfield candidates found — try lowering bsi_threshold or raising ndvi_threshold")
+        print(
+            "No brownfield candidates found — try lowering bsi_threshold or raising ndvi_threshold"
+        )
         return {}
 
     # Step 2 — reconstruct 2D candidate map
@@ -84,7 +92,9 @@ def group_pixels_for_candidate_sites(X_reduced: np.ndarray,
 
     # Step 5 — build flat index lookup
     flat_indices = np.full(original_shape, -1, dtype=int)
-    flat_indices[valid_positions[:, 0], valid_positions[:, 1]] = np.arange(len(valid_positions))
+    flat_indices[valid_positions[:, 0], valid_positions[:, 1]] = np.arange(
+        len(valid_positions)
+    )
 
     # Step 6 — build candidate groups in one vectorised pass
     candidate_groups = {}
@@ -111,11 +121,14 @@ def group_pixels_for_candidate_sites(X_reduced: np.ndarray,
     print(f"Candidate sites after size filter: {len(candidate_groups)}")
     return candidate_groups
 
-def calculate_site_properties(candidate_groups: dict,
-                              bsi_array: np.ndarray,
-                              mask: np.ndarray,
-                              original_shape: tuple,
-                              tile_metadata: dict) -> list:
+
+def calculate_site_properties(
+    candidate_groups: dict,
+    bsi_array: np.ndarray,
+    mask: np.ndarray,
+    original_shape: tuple,
+    tile_metadata: dict,
+) -> list:
     """
     Calculates properties for each candidate site — pixel count, hectares,
     mean BSI value across all site pixels, and centroid UTM coordinates converted
@@ -138,9 +151,9 @@ def calculate_site_properties(candidate_groups: dict,
                                 site_id, pixel_count, hectares, mean_bsi,
                                 centroid_utm_x, centroid_utm_y.
     """
-    left = tile_metadata['left']
-    top = tile_metadata['top']
-    resolution = tile_metadata['resolution']
+    left = tile_metadata["left"]
+    top = tile_metadata["top"]
+    resolution = tile_metadata["resolution"]
     mask_2d = mask.reshape(original_shape)
     valid_positions = np.argwhere(mask_2d)
     site_properties = []
@@ -153,20 +166,22 @@ def calculate_site_properties(candidate_groups: dict,
         centroid_col = positions[:, 1].mean()
         centroid_utm_x = left + (centroid_col * resolution)
         centroid_utm_y = top - (centroid_row * resolution)
-        site_properties.append({
-            'site_id': site_id,
-            'pixel_count': pixel_count,
-            'hectares': round(pixel_count * 0.04, 2),
-            'mean_bsi': mean_bsi,
-            'centroid_utm_x': float(centroid_utm_x),
-            'centroid_utm_y': float(centroid_utm_y)
-        })
+        site_properties.append(
+            {
+                "site_id": site_id,
+                "pixel_count": pixel_count,
+                "hectares": round(pixel_count * 0.04, 2),
+                "mean_bsi": mean_bsi,
+                "centroid_utm_x": float(centroid_utm_x),
+                "centroid_utm_y": float(centroid_utm_y),
+            }
+        )
     return site_properties
 
-def generate_boundary_polygons(candidate_groups: dict,
-                               mask: np.ndarray,
-                               original_shape: tuple,
-                               tile_metadata: dict) -> list:
+
+def generate_boundary_polygons(
+    candidate_groups: dict, mask: np.ndarray, original_shape: tuple, tile_metadata: dict
+) -> list:
     """
     Generates boundary polygon for each candidate site by tracing the outline
     of grouped pixels in the 2D grid and converting pixel positions to UTM
@@ -188,9 +203,9 @@ def generate_boundary_polygons(candidate_groups: dict,
                               the outline of the grouped pixels, ready for Folium
                               map display and database storage.
     """
-    left = tile_metadata['left']
-    top = tile_metadata['top']
-    resolution = tile_metadata['resolution']
+    left = tile_metadata["left"]
+    top = tile_metadata["top"]
+    resolution = tile_metadata["resolution"]
     mask_2d = mask.reshape(original_shape)
     valid_positions = np.argwhere(mask_2d)
     site_polygons = []
@@ -205,17 +220,13 @@ def generate_boundary_polygons(candidate_groups: dict,
         boundary_positions = np.argwhere(boundary_grid)
 
         boundary_utm = [
-            [float(left + col * resolution),
-             float(top - row * resolution)]
+            [float(left + col * resolution), float(top - row * resolution)]
             for row, col in boundary_positions
         ]
 
         if boundary_utm:
             boundary_utm.append(boundary_utm[0])
 
-        site_polygons.append({
-            'site_id': site_id,
-            'boundary': boundary_utm
-        })
+        site_polygons.append({"site_id": site_id, "boundary": boundary_utm})
 
     return site_polygons

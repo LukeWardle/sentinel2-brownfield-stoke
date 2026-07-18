@@ -13,13 +13,14 @@ Usage:
 Source: https://www.planning.data.gov.uk/dataset/brownfield-land
 Licence: Open Government Licence v3.0
 """
-import os
+
 import sys
-import requests
-from pyproj import Transformer
-from pathlib import Path
-from dotenv import load_dotenv
 from datetime import datetime
+from pathlib import Path
+
+import requests
+from dotenv import load_dotenv
+from pyproj import Transformer
 
 load_dotenv()
 
@@ -47,12 +48,14 @@ def get_lpa_entity_id_for_gss(gss_code: str) -> int | None:
     la_response = requests.get(la_url, timeout=30)
 
     if la_response.status_code != 200:
-        raise ValueError(f"Local authority lookup failed — status code {la_response.status_code}")
+        raise ValueError(
+            f"Local authority lookup failed — status code {la_response.status_code}"
+        )
 
     lpa_reference = None
-    for entity in la_response.json().get('entities', []):
-        if entity.get('statistical-geography') == gss_code:
-            lpa_reference = entity.get('local-planning-authority')
+    for entity in la_response.json().get("entities", []):
+        if entity.get("statistical-geography") == gss_code:
+            lpa_reference = entity.get("local-planning-authority")
             break
 
     if not lpa_reference:
@@ -65,11 +68,12 @@ def get_lpa_entity_id_for_gss(gss_code: str) -> int | None:
     if lpa_response.status_code != 200:
         raise ValueError(f"LPA lookup failed — status code {lpa_response.status_code}")
 
-    entities = lpa_response.json().get('entities', [])
+    entities = lpa_response.json().get("entities", [])
     if not entities:
         return None
 
-    return entities[0].get('entity')
+    return entities[0].get("entity")
+
 
 def fetch_brownfield_sites(lpa_entity_id: int) -> list:
     """
@@ -81,7 +85,7 @@ def fetch_brownfield_sites(lpa_entity_id: int) -> list:
     count_response = requests.get(count_url, timeout=30)
     if count_response.status_code != 200:
         return []
-    total = count_response.json().get('count', 0)
+    total = count_response.json().get("count", 0)
     print(f"  Total sites: {total}")
 
     if total == 0:
@@ -94,7 +98,7 @@ def fetch_brownfield_sites(lpa_entity_id: int) -> list:
         response = requests.get(url, timeout=60)
         if response.status_code != 200:
             return []
-        return response.json().get('entities', [])
+        return response.json().get("entities", [])
     else:
         # Multiple requests needed — use offset pagination
         all_sites = []
@@ -104,13 +108,14 @@ def fetch_brownfield_sites(lpa_entity_id: int) -> list:
             response = requests.get(url, timeout=60)
             if response.status_code != 200:
                 break
-            sites = response.json().get('entities', [])
+            sites = response.json().get("entities", [])
             if not sites:
                 break
             all_sites.extend(sites)
             fetched += len(sites)
             print(f"  Fetched {fetched}/{total}")
         return all_sites
+
 
 def parse_point(point_str: str):
     """
@@ -119,9 +124,14 @@ def parse_point(point_str: str):
     """
     try:
         point_str = str(point_str).strip()
-        if not point_str or point_str in ('nan', 'None', ''):
+        if not point_str or point_str in ("nan", "None", ""):
             return None
-        point_str = point_str.replace('POINT (', '').replace('POINT(', '').replace(')', '').strip()
+        point_str = (
+            point_str.replace("POINT (", "")
+            .replace("POINT(", "")
+            .replace(")", "")
+            .strip()
+        )
         parts = point_str.split()
         if len(parts) != 2:
             return None
@@ -157,7 +167,7 @@ def load_sites_into_database(sites: list, gss_code: str, cursor, conn) -> tuple:
 
     for site in sites:
         try:
-            point = parse_point(site.get('point', ''))
+            point = parse_point(site.get("point", ""))
             if point is None:
                 errors += 1
                 continue
@@ -165,30 +175,33 @@ def load_sites_into_database(sites: list, gss_code: str, cursor, conn) -> tuple:
             lon, lat = point
             utm_x, utm_y = transformer.transform(lon, lat)
 
-            start_date = site.get('start-date') or None
-            end_date = site.get('end-date') or None
+            start_date = site.get("start-date") or None
+            end_date = site.get("end-date") or None
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO brownfield_sites
                 (site_reference, gss_code, year, name_address, utm_x, utm_y,
                 hectares, planning_status, location, start_date, end_date)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
                         ST_SetSRID(ST_MakePoint(%s, %s), 32630), %s, %s)
                 ON CONFLICT DO NOTHING
-            """, (
-                str(site.get('reference', '')),
-                gss_code,
-                year,
-                str(site.get('site-address', site.get('name', ''))),
-                utm_x,
-                utm_y,
-                float(site['hectares']) if site.get('hectares') else None,
-                str(site.get('planning-permission-status', '')),
-                utm_x,
-                utm_y,
-                start_date,
-                end_date
-            ))
+            """,
+                (
+                    str(site.get("reference", "")),
+                    gss_code,
+                    year,
+                    str(site.get("site-address", site.get("name", ""))),
+                    utm_x,
+                    utm_y,
+                    float(site["hectares"]) if site.get("hectares") else None,
+                    str(site.get("planning-permission-status", "")),
+                    utm_x,
+                    utm_y,
+                    start_date,
+                    end_date,
+                ),
+            )
             conn.commit()
             count += 1
 
@@ -200,6 +213,7 @@ def load_sites_into_database(sites: list, gss_code: str, cursor, conn) -> tuple:
                 first_error = False
 
     return count, errors
+
 
 if __name__ == "__main__":
     gss_code_filter = sys.argv[1] if len(sys.argv) > 1 else None
@@ -220,7 +234,9 @@ if __name__ == "__main__":
 
             print(f"LPA Entity ID: {lpa_entity_id}")
             sites = fetch_brownfield_sites(lpa_entity_id)
-            count, errors = load_sites_into_database(sites, gss_code_filter, cursor, conn)
+            count, errors = load_sites_into_database(
+                sites, gss_code_filter, cursor, conn
+            )
             total_count += count
             total_errors += errors
             print(f"Loaded {count} sites, {errors} errors")
@@ -232,9 +248,11 @@ if __name__ == "__main__":
             lpa_response = requests.get(lpa_url, timeout=30)
 
             if lpa_response.status_code != 200:
-                raise ValueError(f"LPA list fetch failed — status code {lpa_response.status_code}")
+                raise ValueError(
+                    f"LPA list fetch failed — status code {lpa_response.status_code}"
+                )
 
-            lpas = lpa_response.json().get('entities', [])
+            lpas = lpa_response.json().get("entities", [])
             print(f"Found {len(lpas)} LPAs")
 
             # Get known GSS codes from database
@@ -246,15 +264,15 @@ if __name__ == "__main__":
             la_response = requests.get(la_url, timeout=30)
             lpa_ref_to_gss = {}
 
-            for entity in la_response.json().get('entities', []):
-                gss = entity.get('statistical-geography', '')
-                lpa_ref = entity.get('local-planning-authority', '')
+            for entity in la_response.json().get("entities", []):
+                gss = entity.get("statistical-geography", "")
+                lpa_ref = entity.get("local-planning-authority", "")
                 if gss and lpa_ref and gss in known_gss:
                     lpa_ref_to_gss[lpa_ref] = gss
 
             for lpa in lpas:
-                lpa_ref = lpa.get('reference', '')
-                lpa_entity_id = lpa.get('entity')
+                lpa_ref = lpa.get("reference", "")
+                lpa_entity_id = lpa.get("entity")
                 gss = lpa_ref_to_gss.get(lpa_ref)
 
                 if not gss or not lpa_entity_id:

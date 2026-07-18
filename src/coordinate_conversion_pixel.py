@@ -8,7 +8,9 @@ utm_coordinate_to_pixel then converts those UTM coordinates into pixel row and c
 using the satellite image's tile metadata (left, top, resolution). Used by register validation
 and AOI clipping to locate external datasets within the satellite image's pixel grid.
 """
+
 from pyproj import Transformer
+
 
 def convert_bng_to_utm(x: float, y: float) -> dict:
     """
@@ -20,12 +22,13 @@ def convert_bng_to_utm(x: float, y: float) -> dict:
         y (float): y coordinates from EPSG:27700.
 
     Returns:
-        utm_position (dict): Converted x and y coordinates in EPSG:32630.  
+        utm_position (dict): Converted x and y coordinates in EPSG:32630.
     """
     transformer = Transformer.from_crs("EPSG:27700", "EPSG:32630")
     utm_x, utm_y = transformer.transform(x, y)
     utm_positions = {"x": utm_x, "y": utm_y}
     return utm_positions
+
 
 def utm_coordinate_to_pixel(x: float, y: float, tile_metadata: dict) -> dict:
     """
@@ -49,5 +52,3 @@ def utm_coordinate_to_pixel(x: float, y: float, tile_metadata: dict) -> dict:
     row = int((top - y) / resolution)
     pixel_position = {"column": column, "row": row}
     return pixel_position
-
-

@@ -8,12 +8,13 @@ data exists for a given GSS code and year. store_candidate_sites_validation
 validates candidate site data before insertion. store_pipeline_metadata_validation
 validates pipeline run metadata before insertion.
 """
-import os
-import sys
+
 import re
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 def validate_council_boundary_gss(gss_code: str, connection) -> bool:
     """
@@ -34,7 +35,7 @@ def validate_council_boundary_gss(gss_code: str, connection) -> bool:
     if not isinstance(gss_code, str):
         raise ValueError(f"GSS code must be a string, got {type(gss_code)}")
 
-    if not re.match(r'^[ENSW]\d{8}$', gss_code):
+    if not re.match(r"^[ENSW]\d{8}$", gss_code):
         raise ValueError(
             f"Invalid GSS code format '{gss_code}' — must be a letter "
             f"(E, N, S or W) followed by 8 digits e.g. 'E06000021'"
@@ -42,8 +43,7 @@ def validate_council_boundary_gss(gss_code: str, connection) -> bool:
 
     cursor = connection.cursor()
     cursor.execute(
-        "SELECT COUNT(*) FROM council_boundaries WHERE gss_code = %s",
-        (gss_code,)
+        "SELECT COUNT(*) FROM council_boundaries WHERE gss_code = %s", (gss_code,)
     )
     count = cursor.fetchone()[0]
     cursor.close()
@@ -55,6 +55,7 @@ def validate_council_boundary_gss(gss_code: str, connection) -> bool:
         )
 
     return True
+
 
 def brownfield_data_validation(gss_code: str, year: int, connection) -> bool:
     """
@@ -75,7 +76,7 @@ def brownfield_data_validation(gss_code: str, year: int, connection) -> bool:
         ValueError: If no register data found, year is invalid, or GSS code
                     format is invalid.
     """
-    if not re.match(r'^[A-Z]\d{8}$', str(gss_code)):
+    if not re.match(r"^[A-Z]\d{8}$", str(gss_code)):
         raise ValueError(f"Invalid GSS code format: {gss_code}")
 
     if not isinstance(year, int):
@@ -87,7 +88,7 @@ def brownfield_data_validation(gss_code: str, year: int, connection) -> bool:
     cursor = connection.cursor()
     cursor.execute(
         "SELECT COUNT(*) FROM brownfield_sites WHERE gss_code = %s AND year = %s",
-        (gss_code, year)
+        (gss_code, year),
     )
     count = cursor.fetchone()[0]
     cursor.close()
@@ -99,6 +100,7 @@ def brownfield_data_validation(gss_code: str, year: int, connection) -> bool:
         )
 
     return True
+
 
 def store_candidate_sites_validation(candidate_sites: list) -> bool:
     """
@@ -122,22 +124,23 @@ def store_candidate_sites_validation(candidate_sites: list) -> bool:
     if not candidate_sites:
         raise ValueError("candidate_sites is empty — nothing to validate")
 
-    required_keys = {'centroid_utm_x', 'centroid_utm_y', 'pixel_count', 'mean_bsi'}
+    required_keys = {"centroid_utm_x", "centroid_utm_y", "pixel_count", "mean_bsi"}
 
     for i, site in enumerate(candidate_sites):
         missing = required_keys - set(site.keys())
         if missing:
-            raise ValueError(
-                f"Site at index {i} is missing required fields: {missing}"
-            )
+            raise ValueError(f"Site at index {i} is missing required fields: {missing}")
 
-        if not isinstance(site['pixel_count'], (int, float)) or site['pixel_count'] <= 0:
+        if (
+            not isinstance(site["pixel_count"], (int, float))
+            or site["pixel_count"] <= 0
+        ):
             raise ValueError(
                 f"Site at index {i} has invalid pixel_count {site['pixel_count']} "
                 f"— must be a positive number"
             )
 
-        if not (-1.0 <= site['mean_bsi'] <= 1.0):
+        if not (-1.0 <= site["mean_bsi"] <= 1.0):
             raise ValueError(
                 f"Site at index {i} has BSI value {site['mean_bsi']} "
                 f"outside valid range -1 to 1"
@@ -146,13 +149,13 @@ def store_candidate_sites_validation(candidate_sites: list) -> bool:
         # UK UTM Zone 30N (EPSG:32630) valid bounds for Great Britain
         # Easting: 400,000 to 700,000
         # Northing: 5,500,000 to 6,400,000
-        if not (400000 <= site['centroid_utm_x'] <= 700000):
+        if not (400000 <= site["centroid_utm_x"] <= 700000):
             raise ValueError(
                 f"Site at index {i} has UTM X {site['centroid_utm_x']} "
                 f"outside valid UK range 400,000-700,000"
             )
 
-        if not (5500000 <= site['centroid_utm_y'] <= 6400000):
+        if not (5500000 <= site["centroid_utm_y"] <= 6400000):
             raise ValueError(
                 f"Site at index {i} has UTM Y {site['centroid_utm_y']} "
                 f"outside valid UK range 5,500,000-6,400,000"
@@ -160,12 +163,15 @@ def store_candidate_sites_validation(candidate_sites: list) -> bool:
 
     return True
 
-def store_pipeline_metadata_validation(gss_code: str,
-                                       image_date: str,
-                                       status: str,
-                                       candidate_sites_found: int,
-                                       matched_to_register: int,
-                                       unmatched: int) -> bool:
+
+def store_pipeline_metadata_validation(
+    gss_code: str,
+    image_date: str,
+    status: str,
+    candidate_sites_found: int,
+    matched_to_register: int,
+    unmatched: int,
+) -> bool:
     """
     Validates pipeline run metadata before database insertion. Checks status
     is a valid value, all counts are non-negative integers, and image_date
@@ -186,26 +192,24 @@ def store_pipeline_metadata_validation(gss_code: str,
         ValueError: If status is invalid, counts are negative, date format
                     is incorrect, or GSS code format is invalid.
     """
-    if not isinstance(gss_code, str) or not re.match(r'^[ENSW]\d{8}$', gss_code):
+    if not isinstance(gss_code, str) or not re.match(r"^[ENSW]\d{8}$", gss_code):
         raise ValueError(
             f"Invalid GSS code format '{gss_code}' — must be a letter "
             f"(E, N, S or W) followed by 8 digits"
         )
 
-    if status not in ('success', 'failure'):
-        raise ValueError(
-            f"Invalid status '{status}' — must be 'success' or 'failure'"
-        )
+    if status not in ("success", "failure"):
+        raise ValueError(f"Invalid status '{status}' — must be 'success' or 'failure'")
 
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', image_date):
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", image_date):
         raise ValueError(
             f"Invalid image_date format '{image_date}' — must be YYYY-MM-DD"
         )
 
     for name, value in [
-        ('candidate_sites_found', candidate_sites_found),
-        ('matched_to_register', matched_to_register),
-        ('unmatched', unmatched)
+        ("candidate_sites_found", candidate_sites_found),
+        ("matched_to_register", matched_to_register),
+        ("unmatched", unmatched),
     ]:
         if not isinstance(value, int):
             raise ValueError(f"{name} must be an integer, got {type(value)}")

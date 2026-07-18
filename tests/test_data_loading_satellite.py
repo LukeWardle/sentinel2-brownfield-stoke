@@ -2,18 +2,29 @@
 test_data_loading_satellite.py - Unit tests for module data_loading_satellite.py
 
 """
-import pytest
+
 import os
-import numpy as np
-import rasterio
-from src.data_loading_satellite import load_bands, load_scl, _arrange_band_array
 from pathlib import Path
 
+import numpy as np
+import pytest
+import rasterio
+
+from src.data_loading_satellite import _arrange_band_array, load_bands, load_scl
+
 PROJECT_ROOT = Path(__file__).parent.parent
+
+
 @pytest.fixture
 def safe_path():
-    safe_path = str(PROJECT_ROOT / "raw_data" / "S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE" / "S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE")
+    safe_path = str(
+        PROJECT_ROOT
+        / "raw_data"
+        / "S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE"
+        / "S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE"
+    )
     return safe_path
+
 
 # --- load_bands tests ---
 def test_load_bands_missing_band_raises_valueerror(tmp_path):
@@ -29,12 +40,14 @@ def test_load_bands_missing_band_raises_valueerror(tmp_path):
     with pytest.raises(ValueError):
         load_bands(str(tmp_path))
 
+
 def test_load_bands_invalid_path_raises_error():
     """
     Tests that load_bands raises FileNotFoundError for an invalid path.
     """
     with pytest.raises(FileNotFoundError):
         load_bands("/invalid/path/that/does/not/exist")
+
 
 def test_load_bands_returns_valid_array(safe_path):
     """
@@ -51,6 +64,7 @@ def test_load_bands_returns_valid_array(safe_path):
     assert result.shape[1] > 0
     assert result.dtype == np.uint16
 
+
 def test_load_bands_empty_granule_raises_valueerror(tmp_path):
     """
     Tests that load_bands raises ValueError when GRANULE folder is empty.
@@ -58,6 +72,7 @@ def test_load_bands_empty_granule_raises_valueerror(tmp_path):
     (tmp_path / "GRANULE").mkdir()
     with pytest.raises(ValueError):
         load_bands(str(tmp_path))
+
 
 def test_load_bands_correct_data_arrangement(safe_path):
     """
@@ -75,6 +90,7 @@ def test_load_bands_correct_data_arrangement(safe_path):
         b05_direct = src.read(1)
     # B05 is first band loaded — should be at band index 0 across the full 2D grid
     assert np.array_equal(band_array[:, :, 0], b05_direct)
+
 
 # --- _arrange_band_array tests ---
 def test_arrange_band_array_correct_data_arrangement():
@@ -97,6 +113,7 @@ def test_arrange_band_array_correct_data_arrangement():
     # Top-right pixel (row 0, col 1) should have readings [2, 6, 10]
     assert np.array_equal(result[0, 1], [2, 6, 10])
 
+
 # --- load_scl tests ---
 def test_load_scl_returns_valid_array(safe_path):
     """
@@ -109,12 +126,14 @@ def test_load_scl_returns_valid_array(safe_path):
     assert result.shape[0] > 0
     assert result.dtype == np.uint8
 
+
 def test_load_scl_invalid_path_raises_error():
     """
     Tests that load_scl raises FileNotFoundError for an invalid path.
     """
     with pytest.raises(FileNotFoundError):
         load_scl("/invalid/path/that/does/not/exist")
+
 
 def test_load_scl_missing_scl_raises_valueerror(tmp_path):
     """
@@ -127,6 +146,7 @@ def test_load_scl_missing_scl_raises_valueerror(tmp_path):
 
     with pytest.raises(ValueError):
         load_scl(str(tmp_path))
+
 
 def test_load_scl_empty_granule_raises_valueerror(tmp_path):
     """
