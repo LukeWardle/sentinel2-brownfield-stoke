@@ -72,7 +72,7 @@ Nimbus Maps, LandTech/LandInsight and SearchLand all overlay the existing brownf
 | Brownfield register (manual) | DLUHC / data.gov.uk | Annual publication, 218 sites for Stoke-on-Trent 2019-2024 |
 | Brownfield register (automated) | planning.data.gov.uk API | 352 Stoke sites, 85% UK council coverage |
 | UK council boundaries | ONS Open Geography Portal | 361 local authorities, stored in PostgreSQL |
-
+- **OpenStreetMap** (via Overpass API) — land-use polygons (buildings, car parks, amenity/leisure, infrastructure, quarries, agriculture) used to exclude non-brownfield sites before detection. Licensed under ODbL; see P4-8 for the commercial licensing review. OS OpenData is the licence-clean fallback for building footprints.
 ---
 
 ## Setup
@@ -170,7 +170,7 @@ Results are also stored in PostgreSQL:
 python -m pytest tests/ -v
 ```
 
-251 tests passing across 13 modules.
+Comprehensive test suite run automatically in CI on every push and pull request (see the tests workflow).
 
 ---
 

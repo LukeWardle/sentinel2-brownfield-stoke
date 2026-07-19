@@ -14,7 +14,7 @@ Version 2 is complete and running end-to-end for Stoke-on-Trent. The May 2026 Se
 | Version | Status | Description |
 |---|---|---|
 | v1 | ✅ Complete | PCA spectral analysis, false colour map, results report |
-| v2 | ✅ Complete | Database, Copernicus API, BSI/NDVI clustering, AOI clipping, register matching, interactive map, PDF report, 289 tests |
+| v2 | ✅ Complete | Database, Copernicus API, BSI/NDVI clustering, AOI clipping, register matching, interactive map, PDF report, full CI test suite |
 | v3 | Planned | Supervised Random Forest classifier, Streamlit web interface, Supabase migration |
 | v4 | Planned | UK-wide multi-council expansion, automated scheduling |
 
@@ -228,6 +228,16 @@ sentinel2-brownfield-stoke/
 |---|---|---|---|
 | clip_to_council_boundary | band_array_2d: np.ndarray (height, width, 10), scl_array_2d: np.ndarray (height, width), tile_metadata: dict, gss_code: str, connection | tuple: (clipped_bands: np.ndarray (height, width, 10), clipped_scl: np.ndarray (height, width)) | Clips the raw satellite grid to the council boundary retrieved from the database by GSS code. Runs before SCL filtering — the 3D bands and 2D SCL come straight from data_loading_satellite. Uses matplotlib.path.Path for vectorised point-in-polygon checking across every pixel in the tile. Handles MultiPolygon boundaries by checking each polygon separately and combining results with a logical OR. Pixels outside the boundary are zeroed in the band array and set to SCL class 0 in the SCL array so that mask_nodata drops them alongside genuine nodata and defective pixels. Raises ValueError if no boundary found for the given GSS code or geometry type is unsupported |
 
+### Module: exclusion_loader.py — OSM Land-Use Exclusion Zone Loader
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| build_overpass_query | bbox: dict, exclusion_class: str | query: str | Builds an Overpass QL query for one exclusion class within a bounding box. Pure string building — no network — so the class-to-tag mapping in EXCLUSION_CLASSES is unit-testable. Queries both ways and relations so multipolygon land use is captured. Raises ValueError if class unknown |
+| parse_osm_element | element: dict | dict or None | Parses one Overpass element into a GeoJSON geometry. Ways become Polygons; relations resolve outer/inner members into a Polygon with holes, or a MultiPolygon when several outer rings exist. Relation handling is why large industrial estates, parks and infrastructure sites — frequently multipolygons — are captured rather than skipped. Returns None if no usable geometry |
+| fetch_osm_polygons | bbox: dict, exclusion_class: str | polygons: list — dicts of source_ref and GeoJSON geometry | Queries the Overpass API for one class within a bounding box and parses each element via parse_osm_element. The single network-bound function. Raises ValueError if the request fails |
+| store_exclusion_zones | polygons: list, gss_code: str, exclusion_class: str, source: str, connection | None — writes to exclusion_zones | Stores polygons in exclusion_zones, deleting existing rows for the same (gss_code, exclusion_class, source) first so re-runs replace rather than duplicate. Geometry written in EPSG:4326 via ST_GeomFromGeoJSON |
+| load_exclusions_for_council | gss_code: str, connection, classes: list = None | counts: dict — exclusion_class to polygon count | Orchestrates the full load for one council: retrieves the boundary, derives its bounding box, then fetches and stores every requested class from OSM. Defaults to all classes. Raises ValueError if no boundary found |
+
 ### Module: clustering.py — BSI/NDVI Threshold-Based Candidate Site Detection
 
 | Function | Input | Output | Purpose |
@@ -339,7 +349,7 @@ Following the July 2026 strategy revision, the product is framed as off-market l
 - PDF report, interactive Folium map, false colour map
 - Secret rotation and pre-commit/CI secret scanning (P0-1, P0-2)
 - Ground-truth labelling protocol and 19-site manual pilot (P1-1 groundwork)
-- 289 tests passing
+- Comprehensive test suite run in CI
 
 **Current — Application Sprint:**
 - Non-brownfield exclusion filter masking known land-use classes before clustering (P1-5)
