@@ -179,6 +179,15 @@ def test_cumulative_variance_for_k_threshold_100():
     assert result <= len(sorted_eigenvalues)
 
 
+def test_cumulative_variance_for_k_never_exceeds_n():
+    """Regression: k must never exceed component count at the 1.0 float boundary."""
+    for seed in range(50):
+        rng = np.random.default_rng(seed)
+        vals = np.sort(rng.random(10))[::-1]
+        k = cumulative_variance_for_k(vals, variance_threshold=1.0)
+        assert k <= len(vals), f"k={k} exceeded n=10 at seed {seed}"
+
+
 def test_cumulative_variance_for_k_first_component_dominant():
     """Tests that when first component explains 90%+ variance, k=1 at 0.80 threshold."""
     sorted_eigenvalues = np.array(
