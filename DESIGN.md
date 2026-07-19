@@ -5,7 +5,7 @@ Version 2.0 | Brownfield Detection Pipeline | Stoke-on-Trent Planning Intelligen
 
 This system identifies potential unregistered brownfield land in UK council areas using free Sentinel-2 satellite imagery from the Copernicus Data Space Ecosystem. It automatically downloads imagery, applies spectral analysis and connected-component clustering to detect candidate brownfield sites, cross-references results against the council brownfield register, and produces a PDF report and interactive map for planning officials.
 
-Version 2 is complete and running end-to-end for Stoke-on-Trent. The May 2026 Sentinel-2 image produced 218 candidate sites, of which 39 matched the 2024 brownfield register and 179 are potential unregistered brownfield sites.
+Version 2 is complete and running end-to-end for Stoke-on-Trent. The May 2026 Sentinel-2 image produced 218 candidate sites, of which 39 matched the 2024 brownfield register and 179 are potential unregistered brownfield sites. A July 2026 labelling pilot subsequently found these unregistered candidates are dominated by land-use false positives; the P1-5 exclusion filter addresses this before precision is measured in P1-2.
 
 ---
 
@@ -14,7 +14,7 @@ Version 2 is complete and running end-to-end for Stoke-on-Trent. The May 2026 Se
 | Version | Status | Description |
 |---|---|---|
 | v1 | ✅ Complete | PCA spectral analysis, false colour map, results report |
-| v2 | ✅ Complete | Database, Copernicus API, BSI/NDVI clustering, AOI clipping, register matching, interactive map, PDF report, 251 tests |
+| v2 | ✅ Complete | Database, Copernicus API, BSI/NDVI clustering, AOI clipping, register matching, interactive map, PDF report, 289 tests |
 | v3 | Planned | Supervised Random Forest classifier, Streamlit web interface, Supabase migration |
 | v4 | Planned | UK-wide multi-council expansion, automated scheduling |
 
@@ -80,8 +80,12 @@ sentinel2-brownfield-stoke/
 │   ├── setup_boundaries.py             — One-time load of UK council boundaries into database
 │   ├── setup_brownfield.py             — Annual load of brownfield register into database
 │   └── download_brownfield_registers.py — Automated download from planning.data.gov.uk API
+├── migrations/
+│   ├── 001_initial_schema.sql          — Initial five-table PostGIS schema
+│   └── 002_exclusion_zones.sql         — Exclusion-zone table for non-brownfield land-use filtering (P1-5)
 ├── tests/
-│   ├── init.py
+│   ├── __init__.py
+│   ├── conftest.py                     — Path setup and autouse numpy seed for deterministic tests
 │   ├── test_data_loading_satellite.py
 │   ├── test_validation_satellite.py
 │   ├── test_validation_database.py
@@ -101,7 +105,8 @@ sentinel2-brownfield-stoke/
 │   ├── 03_boundary_file_eda.ipynb
 │   ├── 04_bsi_ndvi_calibration_eda.ipynb
 │   ├── 05_clustering_calibration_eda.ipynb
-│   └── 06_pipeline_results_validation.ipynb
+│   ├── 06_pipeline_results_validation.ipynb
+│   └── 07_classifier_design.ipynb
 ├── data/                — Reference datasets committed to GitHub
 │   ├── README.md
 │   ├── brownfield_register_2019.csv
@@ -112,8 +117,12 @@ sentinel2-brownfield-stoke/
 │   ├── brownfield_register_2024.csv
 │   ├── contaminated_land_register.pdf
 │   ├── contaminated_land_special_sites.csv
-│   └── uk_local_authority_boundaries.geojson
+│   ├── uk_local_authority_boundaries.geojson
+│   └── groundtruth/
+│       ├── README.md
+│       └── stoke_pilot_19.csv          — 19-site manual labelling pilot (P1-1), regression fixture for P1-5
 ├── docs/
+│   ├── labelling_protocol.md           — Ground-truth labelling protocol (Dec 2024 NPPF PDL definition)
 │   └── images/
 │       ├── false_colour_map.png
 │       ├── database_erd.png
@@ -129,13 +138,23 @@ sentinel2-brownfield-stoke/
 ├── raw_data/             — Sentinel-2 satellite imagery — not committed to GitHub
 │   ├── README.md
 │   └── S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE/
-├── .env                  — Local database credentials — never committed to git
+├── .github/
+│   └── workflows/
+│       ├── security.yml                — gitleaks secret scan on push and PR
+│       └── tests.yml                   — pytest suite on push and PR
+├── .env                  — Local credentials — never committed to git
+├── .env.example          — Template documenting required environment variables
+├── .pre-commit-config.yaml — gitleaks, ruff and black hooks
+├── pyproject.toml        — ruff and black configuration
+├── pytest.ini
 ├── DATABASE.md
 ├── DESIGN.md
 ├── EDA.md
 ├── README.md
-└── requirements.txt
+├── requirements.txt
+└── requirements-ci.txt
 ```
+
 ---
 
 
@@ -193,7 +212,7 @@ sentinel2-brownfield-stoke/
 |---|---|---|---|
 | spectral_decomposition | covariance_matrix: np.ndarray (10, 10) | eigenvalues: np.ndarray (10,), eigenvectors: np.ndarray (10, 10) | Computes eigenvalues and eigenvectors of the covariance matrix using np.linalg.eigh |
 | sort_variance | eigenvalues: np.ndarray (10,), eigenvectors: np.ndarray (10, 10) | sorted_eigenvalues: np.ndarray (10,), sorted_eigenvectors: np.ndarray (10, 10) | Sorts eigenvalues and eigenvectors in descending order of variance explained |
-| cumulative_variance_for_k | sorted_eigenvalues: np.ndarray (10,), variance_threshold: float = 0.80 | k: int | Returns the minimum number of components needed to explain variance_threshold of total variance. Default threshold is 0.80 — lowered from 0.95 in Version 2 to retain more spectral detail. A minimum of k=3 is enforced in main.py |
+| cumulative_variance_for_k | sorted_eigenvalues: np.ndarray (10,), variance_threshold: float = 0.80 | k: int | Returns the minimum number of components needed to explain variance_threshold of total variance, clamped to the number of components available so a floating-point sum at threshold 1.0 cannot overshoot. Default threshold is 0.80 — lowered from 0.95 in Version 2 to retain more spectral detail. A minimum of k=3 is enforced in main.py |
 | project | centred_array: np.ndarray (pixels, 10), sorted_eigenvectors: np.ndarray (10, 10), k: int | X_reduced: np.ndarray (pixels, k) | Projects centred band data onto the top k principal components |
 
 ### Module: coordinate_conversion_pixel.py — Coordinate Conversion
@@ -297,33 +316,42 @@ The candidate site detection problem is fundamentally a spatial connectivity pro
 
 The original spectral similarity clustering approach used scipy.ndimage.label on all valid pixels — this failed because 21 million pixels form one spatially connected component. The fix was to apply BSI/NDVI thresholds first, creating a sparse binary candidate map before labelling. Full calibration is documented in notebooks/05_clustering_calibration_eda.ipynb.
 
+**[DECISION] Exclusion-filter data source — OSM now, source swappable per class (P1-5)**
+The P1-5 exclusion filter masks known non-opportunity land-use polygons (buildings, car parks, amenity and leisure land, infrastructure and utilities, quarries, agriculture) out of the candidate search before clustering. A July 2026 labelling pilot found the raw BSI/NDVI detector fires on any bare or hard man-made surface with no land-use awareness — 19 of 19 sampled candidates were non-sellable false positives across these classes. OpenStreetMap is used as the initial data source because it is the only free source with land-use tagging granular enough to match those classes. OSM is licensed under ODbL, whose share-alike terms are a commercial-ship question rather than a build question — for a written application and proof site no data product is distributed, so it does not bite yet, and it is logged as a blocking item on the P4-8 licensing review. The exclusion_zones table carries a source column per polygon so the data source is swappable per class: OS OpenData (OGL, licence-clean) can replace individual classes — building footprints in particular — later as a configuration change rather than a rewrite.
+
 ---
 
 ## 7. Known Issues and Deferred Work
 
-No known deferred issues at time of writing.
+The P1 detection-quality workstream is active following a July 2026 labelling pilot (19 of 19 sampled candidates were land-use false positives): the P1-5 exclusion filter and P1-4 temporal-persistence filter are being built before ground-truth labelling (P1-1) and precision/recall evaluation (P1-2). The supervised classifier has been resequenced to follow this work rather than precede it.
+
+The exclusion filter (P1-5) uses OpenStreetMap data under the ODbL licence. The share-alike terms are a commercial-ship question rather than a build question — no data product is distributed for the written Geovation application, so the obligation does not bite yet — but it must be cleared before any paying-customer product ships. This is logged as a blocking item on the P4-8 licensing review, with OS OpenData (OGL, licence-clean) identified as the fallback for building footprints.
 
 ---
 
-## 8. Version Roadmap
+## 8. Roadmap
 
-**Version 2 (Complete):**
-- PostgreSQL/PostGIS database with 361 UK council boundaries and brownfield register
-- Copernicus API automated download
-- BSI/NDVI threshold clustering producing 218 candidate sites for Stoke
-- AOI clipping, register matching, change detection
+Following the July 2026 strategy revision, the product is framed as off-market land-buyer leads rather than a council tool, and work is organised around delivery milestones rather than version numbers. The immediate priority is the Application Sprint for the Geovation application (deadline 31 August 2026); the full schedule is maintained in 06_Backlog_Review_and_Schedule.md.
+
+**Completed:**
+- PostgreSQL/PostGIS database with 361 UK council boundaries and six-year Stoke brownfield register
+- Copernicus API automated download, AOI clipping, BSI/NDVI threshold clustering, register matching, change detection
 - PDF report, interactive Folium map, false colour map
-- 288 tests passing
+- Secret rotation and pre-commit/CI secret scanning (P0-1, P0-2)
+- Ground-truth labelling protocol and 19-site manual pilot (P1-1 groundwork)
+- 289 tests passing
 
-**Version 3 (Planned):**
-- Supervised Random Forest classifier trained on register site spectral signatures
-- Streamlit web interface with council selection and results display
-- Supabase migration for hosted database
-- Per-council model training and storage in council_models table
-- Automated brownfield register download and refresh
+**Current — Application Sprint:**
+- Non-brownfield exclusion filter masking known land-use classes before clustering (P1-5)
+- Temporal-persistence filter requiring bareness across multiple dates (P1-4)
+- Ground-truth labelling of the filtered candidate set (P1-1) and precision/recall evaluation harness (P1-2)
+- One owner-attributed proof site via manual Land Registry lookup (APP-1)
+- Land-buyer customer discovery conversations (APP-2)
+- Draft and submit the Geovation application (APP-3)
 
-**Version 4 (Planned):**
-- UK-wide multi-council processing
-- Automated annual scheduling when new registers published
-- Multi-temporal analysis across seasonal images
-- Confidence score calibration against verified ground truth
+**Next — after Geovation:**
+- Supervised Random Forest classifier trained on register-site spectral signatures, with calibrated confidence scores (per-council models in the council_models table)
+- Ownership integration (HMLR/Land Registry) and developability scoring for qualified leads
+- Data-licensing and commercial-terms review, including the OSM/ODbL question (P4-8)
+- Supabase migration and a light hosted interface
+- UK-wide multi-council expansion and multi-temporal analysis
