@@ -1,0 +1,20 @@
+site_id,cluster,is_brownfield,is_developable,fp_category,confidence,rater_id,label_date,imagery_source,imagery_date,utm_x,utm_y,notes
+pilot-01,strongford_stw,yes,no,infrastructure-utility,high,LW,2026-07-19,google_satellite+streetview,2026,,,Strongford sewage treatment works - operational; one facility fragmented into 4 candidates
+pilot-02,strongford_stw,yes,no,infrastructure-utility,high,LW,2026-07-19,google_satellite+streetview,2026,,,Strongford sewage treatment works - operational
+pilot-03,strongford_stw,yes,no,infrastructure-utility,high,LW,2026-07-19,google_satellite+streetview,2026,,,Strongford sewage treatment works - operational
+pilot-04,strongford_stw,yes,no,infrastructure-utility,high,LW,2026-07-19,google_satellite+streetview,2026,,,Strongford sewage treatment works - operational
+pilot-05,newstead_trentham_estate,yes,no,active-industrial,high,LW,2026-07-19,google_satellite+streetview,2026,,,Occupied industrial units - active use (Goodwin/Dunlop/Easat area)
+pilot-06,newstead_trentham_estate,yes,no,active-industrial,high,LW,2026-07-19,google_satellite+streetview,2026,,,Occupied industrial units - active use
+pilot-07,newstead_trentham_estate,yes,no,active-industrial,high,LW,2026-07-19,google_satellite+streetview,2026,,,Occupied industrial units - active use
+pilot-08,newstead_trentham_estate,yes,no,active-industrial,high,LW,2026-07-19,google_satellite+streetview,2026,,,Occupied industrial units - active use
+pilot-09,newstead_trentham_estate,yes,no,active-industrial,high,LW,2026-07-19,google_satellite+streetview,2026,,,Occupied industrial units - active use
+pilot-10,newstead_trentham_estate,yes,no,active-industrial,high,LW,2026-07-19,google_satellite+streetview,2026,,,Occupied industrial units - detector fired on rooftop
+pilot-11,school,no,no,recreation-education,high,LW,2026-07-19,google_satellite+streetview,2026,,,School playground/MUGA hardstanding - NPPF recreation-ground exclusion
+pilot-12,pembrey_drive,yes,yes,construction,high,LW,2026-07-19,google_satellite+streetview,2026,,,Housing under construction - real developed land but already being built out (temporal FP)
+pilot-13,city_centre_carpark,yes,no,car-park,high,LW,2026-07-19,google_satellite+streetview,2026,,,Active business/retail car park
+pilot-14,city_centre_carpark,yes,no,car-park,high,LW,2026-07-19,google_satellite+streetview,2026,,,Active business/retail car park
+pilot-15,city_centre_carpark,yes,no,car-park,high,LW,2026-07-19,google_satellite+streetview,2026,,,Active business/retail car park
+pilot-16,city_centre_carpark,yes,no,car-park,high,LW,2026-07-19,google_satellite+streetview,2026,,,Active business/retail car park
+pilot-17,city_centre_carpark,yes,no,car-park,high,LW,2026-07-19,google_satellite+streetview,2026,,,Active business/retail car park
+pilot-18,city_centre_carpark,yes,no,car-park,high,LW,2026-07-19,google_satellite+streetview,2026,,,Active business/retail car park
+pilot-19,city_centre_carpark,yes,no,car-park,high,LW,2026-07-19,google_satellite+streetview,2026,,,Active business/retail car park
