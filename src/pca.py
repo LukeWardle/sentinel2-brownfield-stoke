@@ -93,6 +93,7 @@ def cumulative_variance_for_k(
     total_variance = np.sum(sorted_eigenvalues)
     cumulative_variance = np.cumsum(sorted_eigenvalues) / total_variance
     k = int(np.searchsorted(cumulative_variance, variance_threshold) + 1)
+    k = min(k, sorted_eigenvalues.shape[0])
     return k
 
 
