@@ -119,15 +119,31 @@ CREATE TABLE council_models (
 );
 ```
 
+### 3.6 exclusion_zones
+
+Stores land-use polygons that are masked out of the candidate search before clustering, driving the non-brownfield exclusion filter (P1-5) built during the Application Sprint. A manual labelling pilot in July 2026 found the raw BSI/NDVI threshold detector fires on any bare or hard man-made surface with no awareness of land use — active industrial units, retail car parks, operational infrastructure such as sewage works, and school hardstanding all appeared as false positives. This table holds the polygons for those non-opportunity land-use classes so the pipeline can remove them before candidate detection. Polygons are stored in WGS84 (EPSG:4326) to match council_boundaries and transformed to EPSG:32630 at mask time, mirroring the approach used by clip_to_council_boundary. The source column records the data provenance for each polygon (osm or os_open), keeping the source swappable per class: OpenStreetMap is used initially for its granular land-use tagging, while OS OpenData can replace individual classes later without a schema change — see the P4-8 licensing review. A GIST spatial index on the geom column accelerates the per-council containment query run during masking, and a composite index on (gss_code, exclusion_class, source) supports per-council, per-class retrieval and idempotent reloads.
+
+```sql
+CREATE TABLE exclusion_zones (
+    id SERIAL PRIMARY KEY,
+    gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
+    exclusion_class VARCHAR(40) NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    source_ref VARCHAR(80),
+    geom geometry(Geometry, 4326) NOT NULL,
+    loaded_at TIMESTAMP NOT NULL DEFAULT now()
+);
+```
+
 ## 4. Table Relationships
 
-The diagram below shows the relationships between the five tables. All four data tables (brownfield_sites, candidate_sites, pipeline_runs, council_models) reference council_boundaries via gss_code as a foreign key, ensuring all data is linked to a specific council area.
+The diagram below shows the relationships between the six tables. All five data tables (brownfield_sites, candidate_sites, pipeline_runs, council_models, exclusion_zones) reference council_boundaries via gss_code as a foreign key, ensuring all data is linked to a specific council area.
 
 ![Database ERD](docs/images/database_erd.png)
 
 ## 5. Version Roadmap
 
-In Version 2, the database is the core component of the system and is now fully operational. PostgreSQL with PostGIS replaces the previous file-based workflow and provides a centralised structure for all spatial data. The database stores 361 UK council boundary datasets and brownfield register data for Stoke-on-Trent across six years (2019-2024, 1,308 sites) plus 352 sites from planning.data.gov.uk. The Version 2 pipeline runs end-to-end, detecting 218 candidate brownfield sites for Stoke-on-Trent from the May 2026 Sentinel-2 image, matching 39 to the register and identifying 179 potential unregistered sites. Candidate sites and pipeline run metadata are stored in the database after each run. Change detection across register years is implemented and driven by the start_date and end_date columns sourced from planning.data.gov.uk, reporting 66 removed and 119 added sites for Stoke 2019-2024.
+In Version 2, the database is the core component of the system and is now fully operational. PostgreSQL with PostGIS replaces the previous file-based workflow and provides a centralised structure for all spatial data. The database stores 361 UK council boundary datasets and brownfield register data for Stoke-on-Trent across six years (2019-2024, 1,308 sites) plus 352 sites from planning.data.gov.uk. The Version 2 pipeline runs end-to-end, detecting 218 candidate brownfield sites for Stoke-on-Trent from the May 2026 Sentinel-2 image, matching 39 to the register and identifying 179 potential unregistered sites. Candidate sites and pipeline run metadata are stored in the database after each run. Change detection across register years is implemented and driven by the start_date and end_date columns sourced from planning.data.gov.uk, reporting 66 removed and 119 added sites for Stoke 2019-2024. A July 2026 labelling pilot subsequently found these unregistered candidates are dominated by land-use false positives — the raw detector has no land-use awareness — which the P1-5 exclusion filter addresses before precision is measured in P1-2.
 
 In Version 3, the database is extended to support a full web-based application. An API layer is introduced between the database and the frontend, allowing spatial queries to be handled dynamically through PostGIS. Council boundary data becomes automatically downloaded and updated rather than manually imported. Where available, brownfield datasets are also automatically refreshed to ensure the system remains up to date. The council_models table is populated with trained Random Forest classifier models, with model binaries stored as BYTEA directly in the database to avoid filesystem dependencies in the hosted environment. At this stage, the system is migrated from a local PostgreSQL instance to a hosted production database on Supabase, improving scalability and allowing multi-user access.
 
