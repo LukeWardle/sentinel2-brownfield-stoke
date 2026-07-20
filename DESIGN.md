@@ -5,7 +5,7 @@ Version 2.0 | Brownfield Detection Pipeline | Stoke-on-Trent Planning Intelligen
 
 This system identifies potential unregistered brownfield land in UK council areas using free Sentinel-2 satellite imagery from the Copernicus Data Space Ecosystem. It automatically downloads imagery, applies spectral analysis and connected-component clustering to detect candidate brownfield sites, cross-references results against the council brownfield register, and produces a PDF report and interactive map for planning officials.
 
-Version 2 is complete and running end-to-end for Stoke-on-Trent. The May 2026 Sentinel-2 image produced 218 candidate sites, of which 39 matched the 2024 brownfield register and 179 are potential unregistered brownfield sites. A July 2026 labelling pilot subsequently found these unregistered candidates are dominated by land-use false positives; the P1-5 exclusion filter addresses this before precision is measured in P1-2.
+Version 2 is complete and running end-to-end for Stoke-on-Trent. The May 2026 Sentinel-2 image produced 218 candidate sites, of which 39 matched the 2024 brownfield register and 179 are potential unregistered brownfield sites. A July 2026 labelling pilot subsequently found these unregistered candidates are dominated by land-use false positives, and a July 2026 math/algorithm audit identified correctness fixes to detection itself — both are addressed by the Detection Correctness Foundation workstream (FND-1 to FND-6) alongside the exclusion filter (P1-5), temporal persistence (P1-4) and the evaluation harness (P1-1/P1-2), sequenced before the Application Sprint.
 
 ---
 
@@ -37,9 +37,10 @@ graph TD
     I --> J[pca.py]
     J --> K[clustering.py: group_pixels_for_candidate_sites]
     K --> L[clustering.py: calculate_site_properties + generate_boundary_polygons]
-    L --> LX[exclusion_filter.py: filter_candidates_by_exclusion]
-    LX --> M[database_query.py: match_candidate_to_register]
-    M --> N[database_query.py: store_candidate_sites]
+    L --> LX[exclusion_filter.py: filter_candidates_by_exclusion + report_register_recall]
+    LX --> LP[persistence_filter.py: filter_candidates_by_persistence — optional]
+    LP --> M[database_query.py: match_candidate_to_register]
+    M --> N[database_query.py: store_candidate_sites — with footprint geometry]
     N --> O[database_query.py: detect_register_changes]
     O --> P[visualise.py: false_map_creation + report_creation + create_interactive_map]
     P --> Q[outputs/]
@@ -56,6 +57,20 @@ graph TD
     F --> G[(brownfield_sites table)]
     H[planning.data.gov.uk API] --> I[scripts/download_brownfield_registers.py]
     I --> G
+    J[OpenStreetMap Overpass API] --> K[scripts/setup_exclusions.py → exclusion_loader.py]
+    K --> L[(exclusion_zones table)]
+```
+
+### Pipeline Flow 3 — Evaluation (P1-1 / P1-2)
+
+```mermaid
+graph TD
+    A[(candidate_sites)] --> B[scripts/export_labelling_sheet.py]
+    B --> C[labelling_sheet CSV — unregistered candidates]
+    C --> D[Manual labelling per docs/labelling_protocol.md]
+    D --> E[evaluation.py: precision_from_labels]
+    A --> F[evaluation.py: register_recall]
+    G[(brownfield_sites — validation set)] --> F
 ```
 
 ---
@@ -73,6 +88,10 @@ sentinel2-brownfield-stoke/
 │   ├── coordinate_conversion_pixel.py  — Converts external coordinates to UTM and pixel positions
 │   ├── aoi_clipping.py                 — Clips satellite image to council boundary
 │   ├── clustering.py                   — BSI/NDVI threshold-based candidate site detection
+│   ├── exclusion_loader.py             — OSM land-use exclusion zone loader (Overpass API)
+│   ├── exclusion_filter.py             — PostGIS area-overlap exclusion filtering (FND-4)
+│   ├── persistence_filter.py           — Temporal persistence across image dates (P1-4)
+│   ├── evaluation.py                   — Register recall and labelled precision (P1-2)
 │   ├── database_query.py               — Runtime database queries and candidate site storage
 │   ├── api_copernicus.py               — Copernicus API authentication and SAFE file download
 │   ├── visualise.py                    — False colour map, PDF report and interactive map
@@ -80,10 +99,13 @@ sentinel2-brownfield-stoke/
 ├── scripts/
 │   ├── setup_boundaries.py             — One-time load of UK council boundaries into database
 │   ├── setup_brownfield.py             — Annual load of brownfield register into database
+│   ├── setup_exclusions.py             — Load OSM exclusion zones for a council
+│   ├── export_labelling_sheet.py       — Export unregistered candidates for manual labelling (P1-1)
 │   └── download_brownfield_registers.py — Automated download from planning.data.gov.uk API
 ├── migrations/
 │   ├── 001_initial_schema.sql          — Initial five-table PostGIS schema
-│   └── 002_exclusion_zones.sql         — Exclusion-zone table for non-brownfield land-use filtering (P1-5)
+│   ├── 002_exclusion_zones.sql         — Exclusion-zone table for non-brownfield land-use filtering (P1-5)
+│   └── 003_candidate_geometry.sql      — Candidate footprint geometry column and GIST index (FND-3)
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py                     — Path setup and autouse numpy seed for deterministic tests
@@ -96,6 +118,11 @@ sentinel2-brownfield-stoke/
 │   ├── test_coordinate_conversion_pixel.py
 │   ├── test_aoi_clipping.py
 │   ├── test_clustering.py
+│   ├── test_exclusion_loader.py
+│   ├── test_exclusion_filter.py
+│   ├── test_persistence_filter.py
+│   ├── test_evaluation.py
+│   ├── test_fnd_regressions.py         — Regression tests for the July 2026 audit findings
 │   ├── test_database_query.py
 │   ├── test_api_copernicus.py
 │   ├── test_visualise.py
@@ -165,7 +192,7 @@ sentinel2-brownfield-stoke/
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| run_pipeline | gss_code: str, image_date: str, output_dir: str | None — saves outputs to output_dir, stores results in database | Orchestrates the full Version 2 pipeline end-to-end. Downloads SAFE file via Copernicus API, opens single database connection passed through all database functions, runs all processing modules in sequence, stores results, generates three outputs (false colour map, PDF report, interactive map), deletes SAFE file on completion. Raises ValueError if GSS code invalid, no products found, or any validation fails. Status stored as success or failure regardless of outcome |
+| run_pipeline | gss_code: str, image_date: str, output_dir: str, min_persistence: int = 0 | None — saves outputs to output_dir, stores results in database | Orchestrates the full pipeline end-to-end. Downloads SAFE file via Copernicus API, opens single database connection passed through all database functions, runs all processing modules in sequence, applies the FND-4 exclusion filter and prints the register recall guardrail, optionally applies the P1-4 persistence filter (min_persistence >= 1), attaches each candidate's footprint geometry before storage (FND-3), stores results, generates three outputs (false colour map, PDF report, interactive map), deletes SAFE file on completion. Raises ValueError if GSS code invalid, no products found, or any validation fails. Status stored as success or failure regardless of outcome |
 
 ### Module: data_loading_satellite.py — Load and Prepare Sentinel-2 Band Data
 
@@ -220,7 +247,7 @@ sentinel2-brownfield-stoke/
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| convert_bng_to_utm | bng_x: float, bng_y: float | utm: dict containing x and y | Converts British National Grid (EPSG:27700) coordinates to UTM Zone 30N (EPSG:32630) using pyproj. Used when loading brownfield register sites from CSV files which store coordinates in BNG |
+| convert_bng_to_utm | bng_x: float, bng_y: float | utm: dict containing x and y | Converts British National Grid (EPSG:27700) coordinates to UTM Zone 30N (EPSG:32630) using the module-level pyproj Transformer, built once with always_xy=True so axis order is explicit rather than dependent on each CRS's native definition (FND-5), and reused across calls rather than rebuilt per call (FND-6). Used when loading brownfield register sites from CSV files which store coordinates in BNG |
 | utm_coordinate_to_pixel | utm_x: float, utm_y: float, tile_metadata: dict | pixel: dict containing row and column | Converts a UTM coordinate to a pixel position in the satellite image using the tile's left edge, top edge and resolution from tile_metadata |
 
 ### Module: aoi_clipping.py — Clips Satellite Image to Council Boundary
@@ -235,34 +262,49 @@ sentinel2-brownfield-stoke/
 |---|---|---|---|
 | build_overpass_query | bbox: dict, exclusion_class: str | query: str | Builds an Overpass QL query for one exclusion class within a bounding box. Pure string building — no network — so the class-to-tag mapping in EXCLUSION_CLASSES is unit-testable. Queries both ways and relations so multipolygon land use is captured. Raises ValueError if class unknown |
 | parse_osm_element | element: dict | dict or None | Parses one Overpass element into a GeoJSON geometry. Ways become Polygons; relations resolve outer/inner members into a Polygon with holes, or a MultiPolygon when several outer rings exist. Relation handling is why large industrial estates, parks and infrastructure sites — frequently multipolygons — are captured rather than skipped. Returns None if no usable geometry |
-| fetch_osm_polygons | bbox: dict, exclusion_class: str | polygons: list — dicts of source_ref and GeoJSON geometry | Queries the Overpass API for one class within a bounding box and parses each element via parse_osm_element. The single network-bound function. Raises ValueError if the request fails |
-| store_exclusion_zones | polygons: list, gss_code: str, exclusion_class: str, source: str, connection | None — writes to exclusion_zones | Stores polygons in exclusion_zones, deleting existing rows for the same (gss_code, exclusion_class, source) first so re-runs replace rather than duplicate. Geometry written in EPSG:4326 via ST_GeomFromGeoJSON |
+| fetch_osm_polygons | bbox: dict, exclusion_class: str | polygons: list — dicts of source_ref and GeoJSON geometry | Queries the Overpass API for one class within a bounding box and parses each element via parse_osm_element. The single network-bound function. Sends an identifying User-Agent, posts the query as a raw body, and backs off and retries on HTTP 429 rate limiting. Raises ValueError if the request ultimately fails |
+| store_exclusion_zones | polygons: list, gss_code: str, exclusion_class: str, source: str, connection | stored: int — polygons written | Stores polygons in exclusion_zones, deleting existing rows for the same (gss_code, exclusion_class, source) first so re-runs replace rather than duplicate. Commits per row with per-row error isolation so one malformed geometry cannot poison the transaction and silently discard the batch. Geometry written in EPSG:4326 via ST_GeomFromGeoJSON |
 | load_exclusions_for_council | gss_code: str, connection, classes: list = None | counts: dict — exclusion_class to polygon count | Orchestrates the full load for one council: retrieves the boundary, derives its bounding box, then fetches and stores every requested class from OSM. Defaults to all classes. Raises ValueError if no boundary found |
 
 ### Module: clustering.py — BSI/NDVI Threshold-Based Candidate Site Detection
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| group_pixels_for_candidate_sites | X_reduced: np.ndarray (pixels, k), mask: np.ndarray (pixels,), original_shape: tuple, bsi_array: np.ndarray (pixels,), ndvi_array: np.ndarray (pixels,), bsi_threshold: float = 0.05, ndvi_threshold: float = 0.2, min_pixels: int = 5, max_pixels: int = 2500 | candidate_groups: dict — keys are site IDs, values are lists of pixel indices | Identifies candidate brownfield pixels using BSI and NDVI thresholds (BSI > bsi_threshold AND NDVI < ndvi_threshold), applies morphological dilation (iterations=1) to connect nearby candidates, uses scipy.ndimage.label for connected-component labelling, and filters by min_pixels and max_pixels. Uses vectorised numpy sorting for efficient single-pass label grouping. Pipeline uses BSI>0.1, NDVI<0.2, min=10, max=2500 producing 218 sites for Stoke May 2026 |
-| calculate_site_properties | candidate_groups: dict, bsi_array: np.ndarray (pixels,), mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_properties: list — list of dicts each containing site_id, pixel_count, hectares, mean_bsi, centroid_utm_x, centroid_utm_y | Calculates properties for each candidate site. Hectares calculated as pixel_count × 0.04 (each 20m pixel = 400m² = 0.04ha). Centroid UTM coordinates calculated from mean pixel row/column position using tile_metadata |
-| generate_boundary_polygons | candidate_groups: dict, mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_polygons: list — list of dicts each containing site_id and boundary (list of UTM coordinate pairs) | Generates boundary polygon for each candidate site using binary erosion to find boundary pixels, converts to UTM coordinates. Polygons are closed (first and last coordinate identical) |
+| group_pixels_for_candidate_sites | X_reduced: np.ndarray (pixels, k), mask: np.ndarray (pixels,), original_shape: tuple, bsi_array: np.ndarray (pixels,), ndvi_array: np.ndarray (pixels,), bsi_threshold: float = 0.05, ndvi_threshold: float = 0.2, min_pixels: int = 5, max_pixels: int = 2500 | candidate_groups: dict — keys are site IDs, values are lists of pixel indices | Identifies candidate brownfield pixels using BSI and NDVI thresholds (BSI > bsi_threshold AND NDVI < ndvi_threshold), applies morphological dilation (iterations=1) as a connectivity scaffold, uses scipy.ndimage.label for connected-component labelling, then takes group membership as the labelled blob INTERSECTED with the pre-dilation candidate map (FND-1) — dilation-border pixels that never passed the thresholds are excluded, so mean_bsi and pixel counts are uncontaminated. The size filter applies to the true candidate count. Uses vectorised numpy sorting for efficient single-pass label grouping. Pipeline uses BSI>0.1, NDVI<0.2, min=10, max=2500 |
+| calculate_site_properties | candidate_groups: dict, bsi_array: np.ndarray (pixels,), mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_properties: list — list of dicts each containing site_id, pixel_count, hectares, mean_bsi, centroid_utm_x, centroid_utm_y | Calculates properties for each candidate site. Hectares calculated as pixel_count × 0.04 (each 20m pixel = 400m² = 0.04ha). Because membership contains only true threshold-passing pixels (FND-1), mean_bsi and hectares reflect the actual bare-soil footprint. Centroid UTM coordinates calculated from mean pixel row/column position using tile_metadata |
+| generate_boundary_polygons | candidate_groups: dict, mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_polygons: list — list of dicts each containing site_id and geometry (GeoJSON Polygon or MultiPolygon in EPSG:32630, or None) | Converts each site's pixel footprint to valid GeoJSON geometry using rasterio.features.shapes (FND-2): rings correctly ordered and closed, holes preserved, disconnected parts emitted as MultiPolygon, polygon area exactly pixel_count × 400 m². Replaces the superseded raster-order boundary-pixel trace, whose rings were self-intersecting and geometrically invalid. Output feeds candidate geometry storage (FND-3) and PostGIS area-overlap exclusion (FND-4) |
 
-### Module: exclusion_filter.py — Non-Brownfield Exclusion Filtering
+### Module: exclusion_filter.py — Non-Brownfield Exclusion Filtering (FND-4)
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
-| retrieve_exclusion_zones | gss_code: str, connection, source: str = "osm" | rings: list of np.ndarray | Retrieves the council's exclusion-zone polygons from exclusion_zones, transformed to EPSG:32630 to match candidate boundary coordinates (mirrors retrieve_council_boundary_gss). MultiPolygon geometries are expanded to their component exterior rings. Returns an empty list if the council has no exclusion zones loaded |
-| filter_candidates_by_exclusion | site_properties: list, site_polygons: list, exclusion_rings: list, overlap_threshold: float = 0.5 | tuple: (kept: list, dropped_count: int) | Drops candidate sites whose boundary is majority-inside the council's exclusion zones, matching site_properties to site_polygons by site_id. A candidate is removed only when more than half its boundary vertices fall inside exclusion zones, so a site that merely clips an edge survives. Uses matplotlib.path.Path point-in-polygon testing (the aoi_clipping pattern, no new dependency). Candidates with no traced boundary are kept. Returns the surviving properties and the number dropped |
+| compute_exclusion_overlap | geometry: dict (GeoJSON, EPSG:32630), gss_code: str, connection, classes: list = HARD_EXCLUSION_CLASSES, source: str = "osm" | overlap: float 0.0-1.0 | Computes the fraction of a candidate's AREA inside the given exclusion classes entirely in PostGIS: ST_Intersects pre-filters against the stored 4326 geometry so the GIST index is used, intersecting zones are unioned (order-independent), and ST_Area(ST_Intersection(...)) / ST_Area(candidate) is evaluated in EPSG:32630. True area overlap — replaces the size-biased vertex-ratio approximation of the superseded in-memory filter. Returns 0.0 for None geometry or no intersecting zones |
+| filter_candidates_by_exclusion | site_properties: list, site_polygons: list, gss_code: str, connection, overlap_threshold: float = 0.5, classes: list = HARD_EXCLUSION_CLASSES, source: str = "osm" | tuple: (kept: list, dropped_count: int) | Drops candidates whose footprint area is majority-inside the HARD exclusion classes (car_park, quarry, agriculture, amenity_leisure — the classes measured as disjoint from registered brownfield). Building and infrastructure are deliberately NOT hard masks: 70 and 32 register sites respectively fall inside them, because registered brownfield IS previously-developed land; they return as classifier features in P1-6. Strictly greater-than threshold, candidates without geometry kept, deterministic input-order processing |
+| report_register_recall | gss_code: str, connection, classes: list = HARD_EXCLUSION_CLASSES, source: str = "osm" | dict: register_sites, inside_exclusions | Standing recall metric printed every pipeline run: how many register sites (latest year) fall inside the hard exclusion classes. The register is the pipeline's validation set — this metric watches the filter's error and is never used as a mask override, which would hide the error signal |
+
+### Module: persistence_filter.py — Temporal Persistence (P1-4)
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| count_prior_detection_dates | utm_x: float, utm_y: float, gss_code: str, image_date: str, connection, distance_m: float = 50.0 | int | Counts distinct OTHER image dates with a stored candidate within distance_m of the location, via ST_DWithin on stored centroids. The current image date is excluded so a run never supports itself |
+| filter_candidates_by_persistence | site_properties: list, gss_code: str, image_date: str, connection, min_prior_dates: int = 1, distance_m: float = 50.0 | tuple: (kept: list, dropped_count: int) | Drops candidates lacking nearby detections on at least min_prior_dates other stored image dates — transient bare soil (ploughed fields, construction phases) fails this; genuine brownfield persists. If the database holds fewer than min_prior_dates other dates for the council, the filter is skipped with a warning so a first run never erases itself. Enabled from main.py via --min_persistence (default 0 = off) |
+
+### Module: evaluation.py — Precision and Recall Evaluation (P1-2)
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| register_recall | gss_code: str, connection, run_timestamp: str = None (latest), distance_m: float = 100.0 | dict: run_timestamp, register_year, register_sites, detected, recall | Fraction of register sites (latest register year) with at least one stored candidate from the run within distance_m — the standing recall measurement against the validation set, computed identically every run so changes to detection and filtering are comparable over time. Raises ValueError if the council has no stored runs |
+| precision_from_labels | labels_csv_path: str | dict: labelled, positives, precision | Reads a manually labelled candidate sheet (from scripts/export_labelling_sheet.py, labelled per docs/labelling_protocol.md) and computes the fraction labelled sellable. Unlabelled rows are excluded. Raises ValueError for a missing label column or zero labelled rows. CLI: python -m src.evaluation --gss_code E06000021 [--labels sheet.csv] |
 
 ### Module: database_query.py — Runtime Database Queries and Candidate Site Storage
 
 | Function | Input | Output | Purpose |
 |---|---|---|---|
 | retrieve_council_boundary_gss | gss_code: str, connection | boundary_polygon: dict | Queries council_boundaries table by GSS code and returns the council boundary polygon converted to EPSG:32630 using ST_Transform in PostGIS. Used by AOI clipping. Raises ValueError if GSS code not found |
-| retrieve_brownfield_register_data | gss_code: str, year: int, connection | register_sites: list — list of dicts each containing site_reference, utm_x, utm_y | Queries brownfield_sites table for all register sites matching the given GSS code and year. Raises ValueError if no data found |
-| store_candidate_sites | candidate_sites: list, gss_code: str, image_date: str, run_timestamp: str, connection | None — writes to candidate_sites table | Stores candidate brownfield sites identified by the clustering module. Each site record includes GSS code, image date, run timestamp, centroid_utm_x, centroid_utm_y, pixel_count, mean_bsi and matched_site_reference. Raises ValueError if candidate_sites is empty |
+| retrieve_brownfield_register_data | gss_code: str, year: int, connection | register_sites: list — list of dicts each containing site_reference, utm_x, utm_y | Queries brownfield_sites table for all register sites matching the given GSS code and year, ordered by site_reference for deterministic output. Raises ValueError if no data found |
+| store_candidate_sites | candidate_sites: list, gss_code: str, image_date: str, run_timestamp: str, connection | None — writes to candidate_sites table | Stores candidate brownfield sites identified by the clustering module. Each site record includes GSS code, image date, run timestamp, centroid_utm_x, centroid_utm_y, pixel_count, mean_bsi, matched_site_reference and — when present — the site's footprint geometry written to the geom column via ST_GeomFromGeoJSON in EPSG:32630 (FND-3). Sites without geometry store NULL. Raises ValueError if candidate_sites is empty |
 | store_pipeline_metadata | gss_code: str, image_date: str, run_timestamp: str, status: str, candidate_sites_found: int, matched_to_register: int, unmatched: int, connection | None — writes to pipeline_runs table | Stores pipeline run metadata after each completed run. Raises ValueError if status is not success or failure or if any count is negative |
-| match_candidate_to_register | utm_x: float, utm_y: float, gss_code: str, connection, distance_threshold: float = 100.0 | str or None — site_reference of matched register site or None | Checks whether a candidate site UTM coordinate matches any registered brownfield site within distance_threshold metres using PostGIS ST_DWithin. Automatically uses the most recent year of register data available for the given GSS code. Returns closest matching site_reference or None |
+| match_candidate_to_register | utm_x: float, utm_y: float, gss_code: str, connection, distance_threshold: float = 100.0 | str or None — site_reference of matched register site or None | Checks whether a candidate site UTM coordinate matches any registered brownfield site within distance_threshold metres using PostGIS ST_DWithin. Automatically uses the most recent year of register data available for the given GSS code. Returns closest matching site_reference (site_reference tiebreak for equidistant sites) or None |
 | detect_register_changes | gss_code: str, year_from: int, year_to: int, connection | dict — containing added and removed lists, each containing site_reference and name_address | Identifies brownfield register changes using start_date and end_date fields from planning.data.gov.uk data stored in brownfield_sites table. Sites with end_date between year_from and year_to were removed from the register (likely developed). Sites with start_date between year_from and year_to were newly added. For Stoke 2019-2024: 66 sites removed, 119 sites added. Raises ValueError if year_from >= year_to |
 | get_db_connection | None | connection: psycopg2 connection | Creates and returns a single psycopg2 connection using credentials from .env. Called once in main.py and passed into all subsequent database functions |
 
@@ -297,8 +339,11 @@ Original 0.95 threshold gave k=2 (PC1=82%, PC2=14%), insufficient for land cover
 **[DECISION] AOI clip before mask_nodata**
 AOI clipping runs first on the raw 3D band grid and 2D SCL grid from data_loading_satellite. Pixels outside the council boundary have their band values zeroed and their SCL class set to 0, so mask_nodata drops them in the same pass as genuine nodata and defective pixels. For Stoke this means SCL filtering, normalisation, BSI/NDVI, PCA and clustering only see ~233,000 pixels instead of the ~21 million in the full tile — roughly a 90× reduction. As a side effect validate_quality now measures cloud coverage within the council boundary rather than across the full tile, which is the ratio the pipeline actually cares about. The original Version 2 order ran SCL masking first and clipped afterwards, which produced identical results but processed 21 million pixels through every downstream step.
 
-**[DECISION] Morphological dilation iterations=1**
-Single iteration connects nearby candidate pixels across small gaps. iterations=2 was too aggressive, connecting unrelated patches into one massive component.
+**[DECISION] Morphological dilation iterations=1 — connectivity scaffold only (FND-1)**
+Single iteration connects nearby candidate pixels across small gaps for labelling. iterations=2 was too aggressive, connecting unrelated patches into one massive component. Following the July 2026 audit, the dilated pixels are used ONLY to establish connectivity: group membership is the labelled blob intersected with the pre-dilation candidate map, because admitting dilation-border pixels diluted every site's mean_bsi downward and inflated pixel_count/hectares — biased values that were being stored and reported.
+
+**[DECISION] Candidate boundaries traced with rasterio.features.shapes (FND-2)**
+The original boundary trace emitted boundary pixels in raster (row-major) order and closed the ring, producing self-intersecting, geometrically invalid polygons — unusable for PostGIS storage or area computations. rasterio.features.shapes on each site's pixel grid emits valid, correctly ordered rings with holes preserved, tracing exact pixel edges so polygon area equals pixel_count × 400 m². rasterio is already a core dependency, so no new package.
 
 **[DECISION] max_pixels=2500 (100 hectares) filter**
 Removes spuriously large connected components caused by agricultural bare soil and other non-brownfield land cover. No genuine discrete brownfield site exceeds 100 hectares.
@@ -335,21 +380,34 @@ The candidate site detection problem is fundamentally a spatial connectivity pro
 The original spectral similarity clustering approach used scipy.ndimage.label on all valid pixels — this failed because 21 million pixels form one spatially connected component. The fix was to apply BSI/NDVI thresholds first, creating a sparse binary candidate map before labelling. Full calibration is documented in notebooks/05_clustering_calibration_eda.ipynb.
 
 **[DECISION] Exclusion-filter data source — OSM now, source swappable per class (P1-5)**
-The P1-5 exclusion filter masks known non-opportunity land-use polygons (buildings, car parks, amenity and leisure land, infrastructure and utilities, quarries, agriculture) out of the candidate search before clustering. A July 2026 labelling pilot found the raw BSI/NDVI detector fires on any bare or hard man-made surface with no land-use awareness — 19 of 19 sampled candidates were non-sellable false positives across these classes. OpenStreetMap is used as the initial data source because it is the only free source with land-use tagging granular enough to match those classes. OSM is licensed under ODbL, whose share-alike terms are a commercial-ship question rather than a build question — for a written application and proof site no data product is distributed, so it does not bite yet, and it is logged as a blocking item on the P4-8 licensing review. The exclusion_zones table carries a source column per polygon so the data source is swappable per class: OS OpenData (OGL, licence-clean) can replace individual classes — building footprints in particular — later as a configuration change rather than a rewrite.
+The exclusion filter masks known non-opportunity land-use polygons out of the candidate search. A July 2026 labelling pilot found the raw BSI/NDVI detector fires on any bare or hard man-made surface with no land-use awareness — 19 of 19 sampled candidates were non-sellable false positives across these classes. OpenStreetMap is used as the initial data source because it is the only free source with land-use tagging granular enough to match those classes. OSM is licensed under ODbL, whose share-alike terms are a commercial-ship question rather than a build question — for a written application and proof site no data product is distributed, so it does not bite yet, and it is logged as a blocking item on the P4-8 licensing review. The exclusion_zones table carries a source column per polygon so the data source is swappable per class: OS OpenData (OGL, licence-clean) can replace individual classes — building footprints in particular — later as a configuration change rather than a rewrite.
+
+**[DECISION] Hard exclusion classes limited to those disjoint from brownfield; building/infrastructure become classifier features (FND-4)**
+A live Stoke run with all six OSM classes as hard masks measured 114 of 352 register sites (32%) falling inside exclusion zones — building 70, infrastructure 32, car_park 13, amenity_leisure 10. Building and infrastructure overlap the DEFINITION of brownfield (previously-developed land has buildings and was often industrial), so using them as hard masks rejects the target itself: a hard mask cannot distinguish a derelict former works (keep — it is the brownfield) from an active factory (drop). Hard exclusion is therefore limited to the classes measured as disjoint — car_park, quarry, agriculture, amenity_leisure — while building and infrastructure overlaps return as FEATURES the P1-6 classifier weighs against spectral evidence. The register is treated as a standing validation set: report_register_recall watches the filter's false-exclusion rate every run and is never used as a mask override, which would hide the very error signal it exists to expose.
+
+**[DECISION] Exclusion overlap computed as indexed PostGIS area-intersection (FND-4)**
+The superseded in-memory filter measured the fraction of boundary VERTICES inside exclusion zones — a perimeter proxy biased by candidate size and shape — and tested every candidate against every polygon in Python (O(candidates × polygons)), bypassing the GIST index built in migration 002. The FND-4 filter computes ST_Area(ST_Intersection(candidate, zones)) / ST_Area(candidate) in PostGIS: unbiased true area overlap, GIST-index pre-filtering via ST_Intersects, order-independent ST_Union accumulation, and deterministic results run to run. This requires candidate geometry to exist as valid polygons (FND-2) and be available to PostGIS (FND-3) — which is why those tickets precede it.
+
+**[DECISION] Coordinate transforms use always_xy=True and a module-level Transformer (FND-5/FND-6)**
+Without always_xy, pyproj uses each CRS's native axis order; the BNG→UTM transform worked only because both projected CRS happen to agree on easting/northing, and any geographic CRS entering the chain would silently swap axes. always_xy=True makes the (x, y) order explicit. The Transformer is built once at module level rather than per call — construction is expensive and the function runs once per register site during setup.
 
 ---
 
 ## 7. Known Issues and Deferred Work
 
-The P1 detection-quality workstream is active following a July 2026 labelling pilot (19 of 19 sampled candidates were land-use false positives): the P1-5 exclusion filter and P1-4 temporal-persistence filter are being built before ground-truth labelling (P1-1) and precision/recall evaluation (P1-2). The supervised classifier has been resequenced to follow this work rather than precede it.
+The Detection Correctness Foundation milestone (FND-1 to FND-6, GitHub issues #83-#88) is sequenced before the Application Sprint, following the July 2026 math/algorithm audit of the full pipeline. FND-1 (dilation contamination) and FND-2 (invalid boundary rings) corrupt values already stored and reported, FND-3/FND-4 replace the superseded in-memory exclusion masker with indexed PostGIS area-overlap, and FND-5/FND-6 harden coordinate transforms. The audit also cleared several suspects as NOT bugs: the 1/n covariance estimator (immaterial for PCA), BSI/NDVI scale-invariance to normalisation, and the divide-by-zero handling in both indices.
 
-The exclusion filter (P1-5) uses OpenStreetMap data under the ODbL licence. The share-alike terms are a commercial-ship question rather than a build question — no data product is distributed for the written Geovation application, so the obligation does not bite yet — but it must be cleared before any paying-customer product ships. This is logged as a blocking item on the P4-8 licensing review, with OS OpenData (OGL, licence-clean) identified as the fallback for building footprints.
+Building and infrastructure land-use overlap is deliberately not a hard exclusion — it eats registered brownfield (70 and 32 register sites respectively). Distinguishing derelict from active developed land is the P1-6 classifier's job, with the overlap fractions as input features.
+
+Temporal persistence (P1-4) requires the pipeline to have run on more than one image date per council before it can filter; until then it passes through with a warning.
+
+The exclusion filter uses OpenStreetMap data under the ODbL licence. The share-alike terms are a commercial-ship question rather than a build question — no data product is distributed for the written Geovation application, so the obligation does not bite yet — but it must be cleared before any paying-customer product ships. This is logged as a blocking item on the P4-8 licensing review, with OS OpenData (OGL, licence-clean) identified as the fallback for building footprints.
 
 ---
 
 ## 8. Roadmap
 
-Following the July 2026 strategy revision, the product is framed as off-market land-buyer leads rather than a council tool, and work is organised around delivery milestones rather than version numbers. The immediate priority is the Application Sprint for the Geovation application (deadline 31 August 2026); the full schedule is maintained in 06_Backlog_Review_and_Schedule.md.
+Following the July 2026 strategy revision, the product is framed as off-market land-buyer leads rather than a council tool, and work is organised around delivery milestones rather than version numbers. The Detection Correctness Foundation milestone precedes the Application Sprint for the Geovation application (deadline 31 August 2026); the full schedule is maintained in 06_Backlog_Review_and_Schedule.md.
 
 **Completed:**
 - PostgreSQL/PostGIS database with 361 UK council boundaries and six-year Stoke brownfield register
@@ -357,19 +415,25 @@ Following the July 2026 strategy revision, the product is framed as off-market l
 - PDF report, interactive Folium map, false colour map
 - Secret rotation and pre-commit/CI secret scanning (P0-1, P0-2)
 - Ground-truth labelling protocol and 19-site manual pilot (P1-1 groundwork)
+- OSM exclusion-zone loader and 38,702-polygon Stoke load (P1-5 loader half)
 - Comprehensive test suite run in CI
 
-**Current — Application Sprint:**
-- Non-brownfield exclusion filter masking known land-use classes before clustering (P1-5)
-- Temporal-persistence filter requiring bareness across multiple dates (P1-4)
-- Ground-truth labelling of the filtered candidate set (P1-1) and precision/recall evaluation harness (P1-2)
+**Current — Detection Correctness Foundation (before Application Sprint):**
+- Uncontaminated group membership: dilation as connectivity scaffold only (FND-1)
+- Valid candidate boundary polygons via rasterio.features.shapes (FND-2)
+- Candidate footprint geometry persisted with GIST index (FND-3, migration 003)
+- Exclusion filter as indexed PostGIS area-overlap over the disjoint hard classes, with the register recall guardrail (FND-4, supersedes the in-memory P1-5 masker)
+- Explicit axis order and module-level coordinate transformer (FND-5, FND-6)
+- Temporal-persistence filter across stored image dates (P1-4)
+- Labelling-sheet export tooling and manual labelling of the filtered candidate set (P1-1), precision/recall evaluation harness (P1-2)
+
+**Then — Application Sprint:**
 - One owner-attributed proof site via manual Land Registry lookup (APP-1)
 - Land-buyer customer discovery conversations (APP-2)
 - Draft and submit the Geovation application (APP-3)
 
 **Next — after Geovation:**
-- Supervised Random Forest classifier trained on register-site spectral signatures, with calibrated confidence scores (per-council models in the council_models table)
+- Supervised Random Forest classifier trained on register-site spectral signatures, with building/infrastructure overlap fractions as input features and calibrated confidence scores (per-council models in the council_models table) (P1-6)
 - Ownership integration (HMLR/Land Registry) and developability scoring for qualified leads
 - Data-licensing and commercial-terms review, including the OSM/ODbL question (P4-8)
 - Supabase migration and a light hosted interface
-- UK-wide multi-council expansion and multi-temporal analysis
