@@ -23,6 +23,7 @@ masking step. See P4-8 for the OSM/ODbL licensing review.
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -31,6 +32,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_HEADERS = {
+    "User-Agent": "SiteSignal/1.0 (brownfield detection; contact l.wardle@live.co.uk)"
+}
 
 # Class-to-OSM-tag mapping. Each class lists Overpass tag filters; a polygon
 # matching any filter for a class is fetched under that class. Kept in code
@@ -205,11 +209,25 @@ def fetch_osm_polygons(bbox: dict, exclusion_class: str) -> list:
         ValueError: If the Overpass request fails.
     """
     query = build_overpass_query(bbox, exclusion_class)
-    response = requests.post(OVERPASS_URL, data={"data": query})
-    if response.status_code != 200:
+    response = None
+    for attempt in range(4):
+        response = requests.post(
+            OVERPASS_URL, data=query.encode("utf-8"), headers=OVERPASS_HEADERS
+        )
+        if response.status_code == 200:
+            break
+        if response.status_code == 429:
+            # Overpass rate limit — wait and retry with linear backoff
+            time.sleep(10 * (attempt + 1))
+            continue
         raise ValueError(
             f"Overpass request failed for {exclusion_class} — "
             f"status code {response.status_code}"
+        )
+    if response is None or response.status_code != 200:
+        raise ValueError(
+            f"Overpass request failed for {exclusion_class} after retries — "
+            f"status code {response.status_code if response else 'no response'}"
         )
 
     elements = response.json().get("elements", [])
@@ -318,4 +336,5 @@ def load_exclusions_for_council(
         polygons = fetch_osm_polygons(bbox, exclusion_class)
         store_exclusion_zones(polygons, gss_code, exclusion_class, "osm", connection)
         counts[exclusion_class] = len(polygons)
+        time.sleep(2)  # courtesy pause between Overpass queries
     return counts

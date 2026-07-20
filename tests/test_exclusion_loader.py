@@ -201,13 +201,28 @@ def test_fetch_osm_polygons_skips_unusable_elements():
     assert len(result) == 1
 
 
-def test_fetch_osm_polygons_non_200_raises():
-    """A failed Overpass request raises ValueError."""
+def test_fetch_osm_polygons_429_retries_then_raises():
+    """A persistent 429 exhausts retries and raises. time.sleep is patched so the
+    backoff runs instantly rather than blocking the test on real wall-clock waits."""
     mock_response = MagicMock()
     mock_response.status_code = 429
-    with patch("src.exclusion_loader.requests.post", return_value=mock_response):
+    with patch("src.exclusion_loader.time.sleep"):
+        with patch("src.exclusion_loader.requests.post", return_value=mock_response):
+            with pytest.raises(ValueError):
+                fetch_osm_polygons(BBOX, "building")
+
+
+def test_fetch_osm_polygons_server_error_raises_without_retry():
+    """A non-retryable error (500) raises immediately without entering the
+    429 retry loop — proving retries fire only for rate limiting."""
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    with patch(
+        "src.exclusion_loader.requests.post", return_value=mock_response
+    ) as mock_post:
         with pytest.raises(ValueError):
             fetch_osm_polygons(BBOX, "building")
+    assert mock_post.call_count == 1
 
 
 # --- store_exclusion_zones tests (real DB, rolled back) ---
