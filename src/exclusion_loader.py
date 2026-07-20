@@ -268,23 +268,33 @@ def store_exclusion_zones(
         """,
         (gss_code, exclusion_class, source),
     )
-    for polygon in polygons:
-        cursor.execute(
-            """
-            INSERT INTO exclusion_zones
-                (gss_code, exclusion_class, source, source_ref, geom)
-            VALUES (%s, %s, %s, %s, ST_GeomFromGeoJSON(%s))
-            """,
-            (
-                gss_code,
-                exclusion_class,
-                source,
-                polygon["source_ref"],
-                json.dumps(polygon["geometry"]),
-            ),
-        )
     connection.commit()
+    stored = 0
+    for polygon in polygons:
+        try:
+            cursor.execute(
+                """
+                INSERT INTO exclusion_zones
+                    (gss_code, exclusion_class, source, source_ref, geom)
+                VALUES (%s, %s, %s, %s, ST_GeomFromGeoJSON(%s))
+                """,
+                (
+                    gss_code,
+                    exclusion_class,
+                    source,
+                    polygon["source_ref"],
+                    json.dumps(polygon["geometry"]),
+                ),
+            )
+            connection.commit()
+            stored += 1
+        except Exception:
+            # One malformed geometry must not abort the whole batch — roll back
+            # just that row and continue. A poisoned transaction was the cause
+            # of buildings storing only 1 of 34,957.
+            connection.rollback()
     cursor.close()
+    return stored
 
 
 def load_exclusions_for_council(
