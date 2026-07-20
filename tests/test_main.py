@@ -92,8 +92,11 @@ def mock_data():
                 "matched_site_reference": None,
             },
         ],
-        "polygons": [{"site_id": 0, "boundary": []}, {"site_id": 1, "boundary": []}],
-        "exclusion_rings": [],
+        "polygons": [
+            {"site_id": 0, "geometry": {"type": "Polygon", "coordinates": [[]]}},
+            {"site_id": 1, "geometry": {"type": "Polygon", "coordinates": [[]]}},
+        ],
+        "recall_guard": {"register_sites": 352, "inside_exclusions": 23},
         "rgb": np.random.randint(0, 255, (n_valid, 3), dtype=np.uint8),
         "change_detection": {
             "added": [{"site_reference": "NEW001", "name_address": "New Site"}],
@@ -155,10 +158,13 @@ def get_patches(mock_data, safe_path="/tmp/test.SAFE"):
         "src.main.generate_boundary_polygons": MagicMock(
             return_value=mock_data["polygons"]
         ),
-        "src.main.retrieve_exclusion_zones": MagicMock(
-            return_value=mock_data["exclusion_rings"]
-        ),
         "src.main.filter_candidates_by_exclusion": MagicMock(
+            return_value=(mock_data["site_properties"], 0)
+        ),
+        "src.main.report_register_recall": MagicMock(
+            return_value=mock_data["recall_guard"]
+        ),
+        "src.main.filter_candidates_by_persistence": MagicMock(
             return_value=(mock_data["site_properties"], 0)
         ),
         "src.main.match_candidate_to_register": MagicMock(return_value=None),
@@ -178,7 +184,9 @@ def get_patches(mock_data, safe_path="/tmp/test.SAFE"):
     }
 
 
-def run_with_mocks(gss_code, date, output_dir, mock_data, overrides=None):
+def run_with_mocks(
+    gss_code, date, output_dir, mock_data, overrides=None, min_persistence=0
+):
     """Runs run_pipeline with all standard mocks applied, with optional overrides."""
     patches = get_patches(mock_data)
     if overrides:
@@ -188,7 +196,7 @@ def run_with_mocks(gss_code, date, output_dir, mock_data, overrides=None):
     started = {k: p.start() for k, p in patchers.items()}
 
     try:
-        run_pipeline(gss_code, date, output_dir)
+        run_pipeline(gss_code, date, output_dir, min_persistence=min_persistence)
     finally:
         for p in patchers.values():
             p.stop()
@@ -394,15 +402,16 @@ def test_run_pipeline_calls_clustering(tmp_path, mock_data):
 
 def test_run_pipeline_calls_exclusion_filter(tmp_path, mock_data):
     """
-    Tests that the P1-5 exclusion filter is applied: retrieve_exclusion_zones
-    and filter_candidates_by_exclusion are both invoked, and the filter is
-    passed the clustered candidate properties.
+    Tests that the FND-4 exclusion filter is applied: it is invoked once,
+    receives the clustered candidate properties and polygons, and the
+    register recall guardrail is reported.
     """
     mocks = run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
-    mocks["src.main.retrieve_exclusion_zones"].assert_called_once()
     mocks["src.main.filter_candidates_by_exclusion"].assert_called_once()
     filter_args = mocks["src.main.filter_candidates_by_exclusion"].call_args
     assert filter_args[0][0] is mock_data["site_properties"]
+    assert filter_args[0][1] is mock_data["polygons"]
+    mocks["src.main.report_register_recall"].assert_called_once()
 
 
 def test_run_pipeline_matches_on_filtered_survivors(tmp_path, mock_data):
@@ -427,6 +436,21 @@ def test_run_pipeline_matches_on_filtered_survivors(tmp_path, mock_data):
     assert mocks["src.main.match_candidate_to_register"].call_count == len(survivor)
 
 
+def test_run_pipeline_persistence_off_by_default(tmp_path, mock_data):
+    """With min_persistence=0 the persistence filter is not invoked."""
+    mocks = run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
+    mocks["src.main.filter_candidates_by_persistence"].assert_not_called()
+
+
+def test_run_pipeline_persistence_applied_when_requested(tmp_path, mock_data):
+    """With min_persistence>=1 the persistence filter runs on the
+    post-exclusion survivors (P1-4)."""
+    mocks = run_with_mocks(
+        "E06000021", "2026-05-25", str(tmp_path), mock_data, min_persistence=1
+    )
+    mocks["src.main.filter_candidates_by_persistence"].assert_called_once()
+
+
 def test_run_pipeline_calls_register_matching(tmp_path, mock_data):
     """Tests that register matching is called for each candidate site."""
     mocks = run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
@@ -439,6 +463,14 @@ def test_run_pipeline_calls_store_candidate_sites(tmp_path, mock_data):
     """Tests that candidate sites are stored in the database."""
     mocks = run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
     mocks["src.main.store_candidate_sites"].assert_called_once()
+
+
+def test_run_pipeline_attaches_geometry_before_storage(tmp_path, mock_data):
+    """FND-3: each stored site carries its footprint geometry from
+    generate_boundary_polygons."""
+    run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
+    for site in mock_data["site_properties"]:
+        assert "geometry" in site
 
 
 def test_run_pipeline_calls_change_detection(tmp_path, mock_data):
