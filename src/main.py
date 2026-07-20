@@ -37,6 +37,10 @@ from src.database_query import (
     store_candidate_sites,
     store_pipeline_metadata,
 )
+from src.exclusion_filter import (
+    filter_candidates_by_exclusion,
+    retrieve_exclusion_zones,
+)
 from src.pca import (
     cumulative_variance_for_k,
     project,
@@ -221,8 +225,23 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
             candidate_groups, bsi_array, mask, original_shape, tile_metadata
         )
 
-        generate_boundary_polygons(
+        site_polygons = generate_boundary_polygons(
             candidate_groups, mask, original_shape, tile_metadata
+        )
+
+        # --- Step 11b: Exclusion filtering (P1-5) ---
+        # Drop candidates that fall in non-brownfield land use (buildings, car
+        # parks, infrastructure, etc.) loaded into exclusion_zones. Runs before
+        # register matching and storage so everything downstream sees the
+        # filtered set.
+        print("Applying non-brownfield exclusion filter...")
+        exclusion_rings = retrieve_exclusion_zones(gss_code, conn)
+        site_properties, excluded_count = filter_candidates_by_exclusion(
+            site_properties, site_polygons, exclusion_rings
+        )
+        print(
+            f"Excluded {excluded_count} candidates in non-brownfield land use; "
+            f"{len(site_properties)} remain"
         )
 
         # --- Step 12: Register matching ---

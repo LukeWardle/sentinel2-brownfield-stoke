@@ -93,6 +93,7 @@ def mock_data():
             },
         ],
         "polygons": [{"site_id": 0, "boundary": []}, {"site_id": 1, "boundary": []}],
+        "exclusion_rings": [],
         "rgb": np.random.randint(0, 255, (n_valid, 3), dtype=np.uint8),
         "change_detection": {
             "added": [{"site_reference": "NEW001", "name_address": "New Site"}],
@@ -153,6 +154,12 @@ def get_patches(mock_data, safe_path="/tmp/test.SAFE"):
         ),
         "src.main.generate_boundary_polygons": MagicMock(
             return_value=mock_data["polygons"]
+        ),
+        "src.main.retrieve_exclusion_zones": MagicMock(
+            return_value=mock_data["exclusion_rings"]
+        ),
+        "src.main.filter_candidates_by_exclusion": MagicMock(
+            return_value=(mock_data["site_properties"], 0)
         ),
         "src.main.match_candidate_to_register": MagicMock(return_value=None),
         "src.main.store_candidate_sites_validation": MagicMock(return_value=True),
@@ -383,6 +390,41 @@ def test_run_pipeline_calls_clustering(tmp_path, mock_data):
     """Tests that clustering is called during pipeline execution."""
     mocks = run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
     mocks["src.main.group_pixels_for_candidate_sites"].assert_called_once()
+
+
+def test_run_pipeline_calls_exclusion_filter(tmp_path, mock_data):
+    """
+    Tests that the P1-5 exclusion filter is applied: retrieve_exclusion_zones
+    and filter_candidates_by_exclusion are both invoked, and the filter is
+    passed the clustered candidate properties.
+    """
+    mocks = run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
+    mocks["src.main.retrieve_exclusion_zones"].assert_called_once()
+    mocks["src.main.filter_candidates_by_exclusion"].assert_called_once()
+    filter_args = mocks["src.main.filter_candidates_by_exclusion"].call_args
+    assert filter_args[0][0] is mock_data["site_properties"]
+
+
+def test_run_pipeline_matches_on_filtered_survivors(tmp_path, mock_data):
+    """
+    Tests that register matching runs on the survivors returned by the
+    exclusion filter, not the raw candidate list — i.e. exclusion happens
+    before matching. The filter returns a single-site survivor list, so
+    matching must be called exactly once.
+    """
+    survivor = [mock_data["site_properties"][1]]
+    mocks = run_with_mocks(
+        "E06000021",
+        "2026-05-25",
+        str(tmp_path),
+        mock_data,
+        overrides={
+            "src.main.filter_candidates_by_exclusion": MagicMock(
+                return_value=(survivor, 1)
+            )
+        },
+    )
+    assert mocks["src.main.match_candidate_to_register"].call_count == len(survivor)
 
 
 def test_run_pipeline_calls_register_matching(tmp_path, mock_data):

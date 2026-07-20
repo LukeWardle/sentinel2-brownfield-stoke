@@ -36,8 +36,9 @@ graph TD
     H --> I[preprocess.py: centre_data + compute_covariance]
     I --> J[pca.py]
     J --> K[clustering.py: group_pixels_for_candidate_sites]
-    K --> L[clustering.py: calculate_site_properties]
-    L --> M[database_query.py: match_candidate_to_register]
+    K --> L[clustering.py: calculate_site_properties + generate_boundary_polygons]
+    L --> LX[exclusion_filter.py: filter_candidates_by_exclusion]
+    LX --> M[database_query.py: match_candidate_to_register]
     M --> N[database_query.py: store_candidate_sites]
     N --> O[database_query.py: detect_register_changes]
     O --> P[visualise.py: false_map_creation + report_creation + create_interactive_map]
@@ -245,6 +246,13 @@ sentinel2-brownfield-stoke/
 | group_pixels_for_candidate_sites | X_reduced: np.ndarray (pixels, k), mask: np.ndarray (pixels,), original_shape: tuple, bsi_array: np.ndarray (pixels,), ndvi_array: np.ndarray (pixels,), bsi_threshold: float = 0.05, ndvi_threshold: float = 0.2, min_pixels: int = 5, max_pixels: int = 2500 | candidate_groups: dict — keys are site IDs, values are lists of pixel indices | Identifies candidate brownfield pixels using BSI and NDVI thresholds (BSI > bsi_threshold AND NDVI < ndvi_threshold), applies morphological dilation (iterations=1) to connect nearby candidates, uses scipy.ndimage.label for connected-component labelling, and filters by min_pixels and max_pixels. Uses vectorised numpy sorting for efficient single-pass label grouping. Pipeline uses BSI>0.1, NDVI<0.2, min=10, max=2500 producing 218 sites for Stoke May 2026 |
 | calculate_site_properties | candidate_groups: dict, bsi_array: np.ndarray (pixels,), mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_properties: list — list of dicts each containing site_id, pixel_count, hectares, mean_bsi, centroid_utm_x, centroid_utm_y | Calculates properties for each candidate site. Hectares calculated as pixel_count × 0.04 (each 20m pixel = 400m² = 0.04ha). Centroid UTM coordinates calculated from mean pixel row/column position using tile_metadata |
 | generate_boundary_polygons | candidate_groups: dict, mask: np.ndarray (pixels,), original_shape: tuple, tile_metadata: dict | site_polygons: list — list of dicts each containing site_id and boundary (list of UTM coordinate pairs) | Generates boundary polygon for each candidate site using binary erosion to find boundary pixels, converts to UTM coordinates. Polygons are closed (first and last coordinate identical) |
+
+### Module: exclusion_filter.py — Non-Brownfield Exclusion Filtering
+
+| Function | Input | Output | Purpose |
+|---|---|---|---|
+| retrieve_exclusion_zones | gss_code: str, connection, source: str = "osm" | rings: list of np.ndarray | Retrieves the council's exclusion-zone polygons from exclusion_zones, transformed to EPSG:32630 to match candidate boundary coordinates (mirrors retrieve_council_boundary_gss). MultiPolygon geometries are expanded to their component exterior rings. Returns an empty list if the council has no exclusion zones loaded |
+| filter_candidates_by_exclusion | site_properties: list, site_polygons: list, exclusion_rings: list, overlap_threshold: float = 0.5 | tuple: (kept: list, dropped_count: int) | Drops candidate sites whose boundary is majority-inside the council's exclusion zones, matching site_properties to site_polygons by site_id. A candidate is removed only when more than half its boundary vertices fall inside exclusion zones, so a site that merely clips an edge survives. Uses matplotlib.path.Path point-in-polygon testing (the aoi_clipping pattern, no new dependency). Candidates with no traced boundary are kept. Returns the surviving properties and the number dropped |
 
 ### Module: database_query.py — Runtime Database Queries and Candidate Site Storage
 
