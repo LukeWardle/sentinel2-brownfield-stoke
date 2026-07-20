@@ -10,6 +10,12 @@ retrieves all register sites for a given council and year for candidate
 site matching. store_candidate_sites and store_pipeline_metadata write
 pipeline results to the database after each run.
 
+FND-3: store_candidate_sites now persists each candidate's footprint
+geometry (GeoJSON from clustering.generate_boundary_polygons, EPSG:32630)
+into the candidate_sites.geom column added by migration 003. Sites without
+a geometry store NULL, so the pipeline remains valid before the migration
+is applied or when a site has no traceable footprint.
+
 Credentials are loaded from .env and must never be hardcoded or committed
 to version control.
 """
@@ -88,6 +94,7 @@ def retrieve_brownfield_register_data(gss_code: str, year: int, connection) -> l
         SELECT site_reference, utm_x, utm_y
         FROM brownfield_sites
         WHERE gss_code = %s AND year = %s
+        ORDER BY site_reference
     """,
         (gss_code, year),
     )
@@ -115,12 +122,16 @@ def store_candidate_sites(
     """
     Stores candidate brownfield sites identified by the clustering module into the
     candidate_sites table. Each site record includes GSS code, image date,
-    run timestamp, UTM coordinates, pixel count, BSI value and register match status.
+    run timestamp, UTM coordinates, pixel count, BSI value, register match status
+    and — when present — the site's footprint geometry (FND-3).
 
     Args:
         candidate_sites (list): List of dicts, one per candidate site, each containing
                                 centroid_utm_x, centroid_utm_y, pixel_count, hectares,
-                                mean_bsi and matched_site_reference (None if unmatched).
+                                mean_bsi, matched_site_reference (None if unmatched)
+                                and optionally geometry — a GeoJSON Polygon or
+                                MultiPolygon in EPSG:32630 from
+                                clustering.generate_boundary_polygons.
         gss_code (str): GSS code for the council area being processed.
         image_date (str): Date of the Sentinel-2 image in YYYY-MM-DD format.
         run_timestamp (str): Timestamp of the pipeline run in YYYY-MM-DD HH:MM:SS format.
@@ -138,11 +149,15 @@ def store_candidate_sites(
     cursor = connection.cursor()
 
     for site in candidate_sites:
+        geometry = site.get("geometry")
+        geometry_json = json.dumps(geometry) if geometry is not None else None
         cursor.execute(
             """
             INSERT INTO candidate_sites
-            (gss_code, image_date, run_timestamp, utm_x, utm_y, pixel_count, bsi_value, matched_site_reference)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (gss_code, image_date, run_timestamp, utm_x, utm_y, pixel_count,
+             bsi_value, matched_site_reference, geom)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                    ST_SetSRID(ST_GeomFromGeoJSON(%s), 32630))
         """,
             (
                 gss_code,
@@ -153,6 +168,7 @@ def store_candidate_sites(
                 site["pixel_count"],
                 site["mean_bsi"],
                 site.get("matched_site_reference", None),
+                geometry_json,
             ),
         )
     connection.commit()
@@ -296,7 +312,7 @@ def match_candidate_to_register(
         ORDER BY ST_Distance(
             location,
             ST_SetSRID(ST_MakePoint(%s, %s), 32630)
-        ) ASC
+        ) ASC, site_reference ASC
         LIMIT 1
     """,
         (gss_code, gss_code, utm_x, utm_y, distance_threshold, utm_x, utm_y),
