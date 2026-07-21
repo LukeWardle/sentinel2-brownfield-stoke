@@ -233,7 +233,7 @@ def run_pipeline(
             ndvi_array,
             bsi_threshold=0.1,
             ndvi_threshold=0.2,
-            min_pixels=10,
+            min_pixels=5,
             max_pixels=2500,
         )
         print(f"Found {len(candidate_groups)} candidate groups")
