@@ -26,11 +26,7 @@ jobs:
 
     env:
       PYTHONPATH: ${{ github.workspace }}
-      DB_NAME: sentinel2_brownfield
-      DB_HOST: 127.0.0.1
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres123
+      DATABASE_URL: postgresql://postgres:postgres123@127.0.0.1:5432/sentinel2_brownfield
       COPERNICUS_USERNAME: test
       COPERNICUS_PASSWORD: test
 
@@ -49,69 +45,15 @@ jobs:
 
       - name: Create .env file
         run: |
-          echo "DB_NAME=sentinel2_brownfield" >> .env
-          echo "DB_HOST=127.0.0.1" >> .env
-          echo "DB_PORT=5432" >> .env
-          echo "DB_USER=postgres" >> .env
-          echo "DB_PASSWORD=postgres123" >> .env
+          echo "DATABASE_URL=postgresql://postgres:postgres123@127.0.0.1:5432/sentinel2_brownfield" >> .env
           echo "COPERNICUS_USERNAME=test" >> .env
           echo "COPERNICUS_PASSWORD=test" >> .env
 
       - name: Set up database schema
         run: |
-          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -c "
-            CREATE TABLE council_boundaries (
-              gss_code VARCHAR(9) PRIMARY KEY,
-              name VARCHAR(100) NOT NULL,
-              boundary GEOMETRY(GEOMETRY, 4326)
-            );
-            CREATE TABLE brownfield_sites (
-              id SERIAL PRIMARY KEY,
-              site_reference VARCHAR(50),
-              gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
-              year INTEGER NOT NULL,
-              name_address TEXT,
-              utm_x FLOAT,
-              utm_y FLOAT,
-              hectares FLOAT,
-              planning_status VARCHAR(100),
-              location GEOMETRY(POINT, 32630),
-              CONSTRAINT brownfield_sites_unique UNIQUE (site_reference, gss_code, year)
-            );
-            CREATE TABLE candidate_sites (
-              id SERIAL PRIMARY KEY,
-              gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
-              image_date DATE NOT NULL,
-              run_timestamp TIMESTAMP NOT NULL,
-              utm_x FLOAT,
-              utm_y FLOAT,
-              pixel_count INTEGER,
-              bsi_value FLOAT,
-              matched_site_reference VARCHAR(50)
-            );
-            CREATE TABLE pipeline_runs (
-              id SERIAL PRIMARY KEY,
-              gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
-              image_date DATE NOT NULL,
-              run_timestamp TIMESTAMP NOT NULL,
-              status VARCHAR(20),
-              candidate_sites_found INTEGER,
-              matched_to_register INTEGER,
-              unmatched INTEGER
-            );
-            CREATE TABLE council_models (
-              id SERIAL PRIMARY KEY,
-              gss_code VARCHAR(9) REFERENCES council_boundaries(gss_code),
-              trained_date DATE NOT NULL,
-              training_sites INTEGER,
-              accuracy FLOAT,
-              precision_score FLOAT,
-              recall_score FLOAT,
-              image_date DATE,
-              model_binary BYTEA
-            );
-          "
+          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -f migrations/001_initial_schema.sql
+          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -f migrations/002_exclusion_zones.sql
+          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -f migrations/003_candidate_geometry.sql
 
       - name: Run unit tests
         run: |

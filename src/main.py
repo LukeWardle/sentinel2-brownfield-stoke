@@ -8,8 +8,18 @@ GSS code and image date as inputs rather than a manual SAFE path.
 
 All Version 2 modules are called in sequence:
 api_copernicus → data_loading_satellite → aoi_clipping → scl_filtering
-→ validation_satellite → preprocess → pca → clustering → database_query
-→ visualise
+→ validation_satellite → preprocess → pca → clustering → exclusion_filter
+→ (persistence_filter) → database_query → visualise
+
+Detection-quality steps (FND / P1 workstream):
+- Candidate footprints are captured as valid GeoJSON geometry (FND-2) and
+  stored alongside each site (FND-3, migration 003).
+- The exclusion filter drops candidates majority-inside hard exclusion
+  classes via indexed PostGIS area-overlap (FND-4); building and
+  infrastructure are not hard masks. The register recall guardrail is
+  printed every run — a validation metric, never a mask override.
+- Optional temporal persistence (P1-4, --min_persistence) requires
+  candidates to recur near the same location on prior image dates.
 """
 
 import os
@@ -37,12 +47,17 @@ from src.database_query import (
     store_candidate_sites,
     store_pipeline_metadata,
 )
+from src.exclusion_filter import (
+    filter_candidates_by_exclusion,
+    report_register_recall,
+)
 from src.pca import (
     cumulative_variance_for_k,
     project,
     sort_variance,
     spectral_decomposition,
 )
+from src.persistence_filter import filter_candidates_by_persistence
 from src.preprocess import (
     centre_data,
     compute_bsi,
@@ -89,13 +104,16 @@ def get_tile_metadata(safe_path: str) -> dict:
         return {"left": bounds.left, "top": bounds.top, "resolution": 20}
 
 
-def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
+def run_pipeline(
+    gss_code: str, image_date: str, output_dir: str, min_persistence: int = 0
+) -> None:
     """
-    Orchestrates the full Version 2 Sentinel-2 brownfield detection pipeline.
+    Orchestrates the full Sentinel-2 brownfield detection pipeline.
     Downloads the SAFE file automatically via the Copernicus API, processes
-    the satellite imagery, identifies candidate brownfield sites, cross-references
-    against the most recent available brownfield register, and produces a false
-    colour map, PDF report and interactive map.
+    the satellite imagery, identifies candidate brownfield sites, filters
+    non-brownfield land use, cross-references against the most recent
+    available brownfield register, and produces a false colour map, PDF
+    report and interactive map.
 
     Args:
         gss_code (str): GSS code for the council area to process —
@@ -103,11 +121,14 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         image_date (str): Date of the Sentinel-2 image to download and process
                           in YYYY-MM-DD format.
         output_dir (str): Path to the folder where outputs will be saved.
+        min_persistence (int): P1-4 — minimum number of OTHER stored image
+                               dates on which each candidate must recur.
+                               0 (default) disables the persistence filter.
 
     Returns:
         None — saves false_colour_map, results_report PDF and interactive_map
-               to output_dir. Stores candidate sites and pipeline run metadata
-               in the PostgreSQL database.
+               to output_dir. Stores candidate sites (with footprint geometry)
+               and pipeline run metadata in the PostgreSQL database.
 
     Raises:
         ValueError: If GSS code is invalid, no products found for the given date,
@@ -212,7 +233,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
             ndvi_array,
             bsi_threshold=0.1,
             ndvi_threshold=0.2,
-            min_pixels=10,
+            min_pixels=5,
             max_pixels=2500,
         )
         print(f"Found {len(candidate_groups)} candidate groups")
@@ -221,9 +242,54 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
             candidate_groups, bsi_array, mask, original_shape, tile_metadata
         )
 
-        generate_boundary_polygons(
+        # FND-2/FND-3: valid footprint geometry, captured and attached so it
+        # is stored with each site.
+        site_polygons = generate_boundary_polygons(
             candidate_groups, mask, original_shape, tile_metadata
         )
+        geometry_by_id = {p["site_id"]: p.get("geometry") for p in site_polygons}
+        for site in site_properties:
+            site["geometry"] = geometry_by_id.get(site["site_id"])
+
+        # --- Step 11b: Exclusion filtering (P1-5 / FND-4) ---
+        # Drop candidates majority-inside the HARD exclusion classes
+        # (car parks, quarries, agriculture, amenity/leisure) via indexed
+        # PostGIS area-overlap. Building and infrastructure are NOT hard
+        # masks — they overlap the definition of brownfield and return as
+        # classifier features in P1-6.
+        print("Applying non-brownfield exclusion filter...")
+        site_properties, excluded_count = filter_candidates_by_exclusion(
+            site_properties, site_polygons, gss_code, conn
+        )
+        print(
+            f"Excluded {excluded_count} candidates in non-brownfield land use; "
+            f"{len(site_properties)} remain"
+        )
+
+        # Register recall guardrail — validation metric, never a mask override.
+        recall_guard = report_register_recall(gss_code, conn)
+        print(
+            f"Register recall guardrail: {recall_guard['inside_exclusions']} of "
+            f"{recall_guard['register_sites']} register sites fall inside the "
+            f"hard exclusion classes"
+        )
+
+        # --- Step 11c: Temporal persistence (P1-4, optional) ---
+        if min_persistence > 0:
+            print(
+                f"Applying persistence filter (>= {min_persistence} prior date(s))..."
+            )
+            site_properties, persistence_dropped = filter_candidates_by_persistence(
+                site_properties,
+                gss_code,
+                image_date,
+                conn,
+                min_prior_dates=min_persistence,
+            )
+            print(
+                f"Dropped {persistence_dropped} non-persistent candidates; "
+                f"{len(site_properties)} remain"
+            )
 
         # --- Step 12: Register matching ---
         print("Matching candidate sites against brownfield register...")
@@ -236,7 +302,7 @@ def run_pipeline(gss_code: str, image_date: str, output_dir: str) -> None:
         unmatched = len(site_properties) - matched
         print(f"Matched: {matched}, Unregistered candidates: {unmatched}")
 
-        # --- Step 13: Store candidate sites ---
+        # --- Step 13: Store candidate sites (with geometry, FND-3) ---
         if site_properties:
             store_candidate_sites_validation(site_properties)
             store_candidate_sites(
@@ -345,6 +411,13 @@ if __name__ == "__main__":
         default=str(Path(__file__).parent.parent / "outputs"),
         help="Output directory (default: outputs/)",
     )
+    parser.add_argument(
+        "--min_persistence",
+        type=int,
+        default=0,
+        help="P1-4: minimum prior image dates each candidate must recur on "
+        "(default 0 = persistence filter off)",
+    )
     args = parser.parse_args()
 
-    run_pipeline(args.gss_code, args.date, args.output_dir)
+    run_pipeline(args.gss_code, args.date, args.output_dir, args.min_persistence)

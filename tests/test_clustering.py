@@ -408,7 +408,7 @@ def test_generate_boundary_polygons_correct_keys():
     )
     if result:
         assert "site_id" in result[0]
-        assert "boundary" in result[0]
+        assert "geometry" in result[0]
 
 
 def test_generate_boundary_polygons_boundary_is_list():
@@ -423,7 +423,11 @@ def test_generate_boundary_polygons_boundary_is_list():
         candidate_groups, mask, original_shape, tile_metadata
     )
     if result:
-        assert isinstance(result[0]["boundary"], list)
+        geometry = result[0]["geometry"]
+        assert geometry is None or isinstance(geometry, dict)
+        if geometry is not None:
+            assert geometry["type"] in ("Polygon", "MultiPolygon")
+            assert isinstance(geometry["coordinates"], list)
 
 
 def test_generate_boundary_polygons_coordinates_are_pairs():
@@ -437,11 +441,18 @@ def test_generate_boundary_polygons_coordinates_are_pairs():
     result = generate_boundary_polygons(
         candidate_groups, mask, original_shape, tile_metadata
     )
-    if result and result[0]["boundary"]:
-        for coord in result[0]["boundary"]:
-            assert len(coord) == 2
-            assert isinstance(coord[0], float)
-            assert isinstance(coord[1], float)
+    geometry = result[0]["geometry"] if result else None
+    if geometry is not None:
+        rings = (
+            geometry["coordinates"]
+            if geometry["type"] == "Polygon"
+            else [r for poly in geometry["coordinates"] for r in poly]
+        )
+        for ring in rings:
+            for coord in ring:
+                assert len(coord) == 2
+                assert isinstance(coord[0], float)
+                assert isinstance(coord[1], float)
 
 
 def test_generate_boundary_polygons_polygon_is_closed():
@@ -455,9 +466,15 @@ def test_generate_boundary_polygons_polygon_is_closed():
     result = generate_boundary_polygons(
         candidate_groups, mask, original_shape, tile_metadata
     )
-    if result and len(result[0]["boundary"]) > 1:
-        boundary = result[0]["boundary"]
-        assert boundary[0] == boundary[-1]
+    geometry = result[0]["geometry"] if result else None
+    if geometry is not None:
+        rings = (
+            geometry["coordinates"]
+            if geometry["type"] == "Polygon"
+            else [r for poly in geometry["coordinates"] for r in poly]
+        )
+        for ring in rings:
+            assert ring[0] == ring[-1]
 
 
 def test_generate_boundary_polygons_empty_groups_returns_empty_list():
@@ -496,4 +513,4 @@ def test_generate_boundary_polygons_single_pixel_site():
     assert isinstance(result, list)
     assert len(result) == 1
     assert "site_id" in result[0]
-    assert "boundary" in result[0]
+    assert "geometry" in result[0]
