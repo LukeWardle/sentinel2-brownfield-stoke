@@ -1,0 +1,41 @@
+# docker-compose.yml — local PostGIS + pipeline container (P0-5).
+#
+#   docker compose up -d db      # PostGIS with migrations auto-applied
+#   docker compose run pipeline python -m src.main --gss_code E06000021 --date 2026-05-25
+#
+# Migrations mount into /docker-entrypoint-initdb.d and run alphabetically
+# (001, 002, 003) on FIRST database creation only — `docker compose down -v`
+# to rebuild the schema from scratch.
+
+services:
+  db:
+    image: postgis/postgis:16-3.5
+    environment:
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: sentinel2_brownfield
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pipeline:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres123@db:5432/sentinel2_brownfield
+    env_file:
+      - .env
+    volumes:
+      - ./outputs:/app/outputs
+      - ./raw_data:/app/raw_data
+
+volumes:
+  pgdata:
