@@ -243,3 +243,34 @@ Comprehensive test suite run automatically in CI on every push and pull request 
 ## Licence
 
 MIT Licence — see LICENSE file for details.
+
+
+## Docker quickstart (P0-5)
+
+```bash
+docker compose up -d db        # PostGIS 16-3.5, migrations auto-applied on first init
+docker compose run pipeline python -m src.main --gss_code E06000021 --date 2026-05-25
+```
+
+`docker compose down -v` resets the database (drops the volume, so
+migrations re-run on next start). Credentials come from `.env` — see
+`.env.example`; they are never baked into the image.
+
+## Dependency layout (P0-4)
+
+- `requirements.txt` — runtime only (install for running the pipeline)
+- `requirements-dev.txt` — dev environment: pytest, pre-commit, Jupyter,
+  scikit-learn (installs runtime via `-r`)
+- `requirements-ci.txt` — what CI installs
+
+## Evaluation metrics report (P1-2)
+
+```bash
+python -m src.evaluation --gss_code E06000021 --report
+python -m src.evaluation --gss_code E06000021 --report --labels labels.csv
+```
+
+Writes `outputs/metrics_<gss>_<timestamp>.json` and a PR-curve PNG. The
+JSON embeds the caveats that make the numbers honest: register precision
+is a floor (unregistered finds are the product, not false positives), and
+register recall carries the vegetated-brownfield definitional ceiling.
