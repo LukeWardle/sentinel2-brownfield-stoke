@@ -4,6 +4,7 @@ matplotlib
 rasterio
 psycopg2-binary
 python-dotenv
+pydantic-settings
 requests
 folium
 pyproj
