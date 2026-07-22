@@ -36,10 +36,15 @@ def test_get_db_connection_returns_connection():
 
 def test_get_db_connection_raises_when_database_url_missing(monkeypatch):
     """Tests that get_db_connection raises ValueError when DATABASE_URL is
-    not set in the environment. Uses monkeypatch so the env is automatically
-    restored after the test, protecting subsequent tests that need a
-    working connection."""
+    absent. The P0-3 settings layer also reads a .env file, so deleting the
+    env var alone is not enough — construct settings with _env_file=None so
+    the absence is real, and bypass the get_settings cache."""
+    from src.settings import Settings
+
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        "src.database_query.get_settings", lambda: Settings(_env_file=None)
+    )
     with pytest.raises(ValueError, match="DATABASE_URL"):
         get_db_connection()
 
