@@ -9,7 +9,8 @@ GSS code and image date as inputs rather than a manual SAFE path.
 All Version 2 modules are called in sequence:
 api_copernicus → data_loading_satellite → aoi_clipping → scl_filtering
 → validation_satellite → preprocess → pca (visualisation only) → clustering
-→ exclusion_filter → (persistence_filter) → database_query → visualise
+→ exclusion_filter → (persistence_filter) → features → database_query
+→ visualise
 
 Detection-quality steps (FND / P0 / P1 workstream):
 - Candidate footprints are captured as valid GeoJSON geometry (FND-2) and
@@ -56,6 +57,7 @@ from src.exclusion_filter import (
     filter_candidates_by_exclusion,
     report_register_recall,
 )
+from src.features import attach_features, compute_candidate_features
 from src.pca import (
     cumulative_variance_for_k,
     project,
@@ -298,6 +300,21 @@ def run_pipeline(
                 f"Dropped {persistence_dropped} non-persistent candidates; "
                 f"{len(site_properties)} remain"
             )
+
+        # --- Step 11d: Classifier features (P1-6, migration 004) ---
+        # Spectral features must be captured here while the arrays exist —
+        # the SAFE raster is deleted at the end of the run. Computed for all
+        # groups (cheap numpy), attached to the surviving sites only.
+        print("Computing per-candidate classifier features...")
+        spectral_features = compute_candidate_features(
+            candidate_groups,
+            normalised_array,
+            bsi_array,
+            ndvi_array,
+            bands_20m,
+            bands_10m,
+        )
+        attach_features(site_properties, spectral_features, gss_code, image_date, conn)
 
         # --- Step 12: Register matching ---
         print("Matching candidate sites against brownfield register...")

@@ -129,7 +129,9 @@ def store_candidate_sites(
     Stores candidate brownfield sites identified by the clustering module into the
     candidate_sites table. Each site record includes GSS code, image date,
     run timestamp, UTM coordinates, pixel count, BSI value, register match status
-    and — when present — the site's footprint geometry (FND-3).
+    and — when present — the site's footprint geometry (FND-3) and the
+    P1-6 classifier feature columns from migration 004 (NULL when a
+    site dict does not carry them).
 
     Args:
         candidate_sites (list): List of dicts, one per candidate site, each containing
@@ -161,9 +163,12 @@ def store_candidate_sites(
             """
             INSERT INTO candidate_sites
             (gss_code, image_date, run_timestamp, utm_x, utm_y, pixel_count,
-             bsi_value, matched_site_reference, geom)
+             bsi_value, matched_site_reference, geom,
+             std_bsi, mean_ndvi, std_ndvi, mean_b04, mean_b08, mean_b11,
+             compactness, prior_date_count)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
-                    ST_SetSRID(ST_GeomFromGeoJSON(%s), 32630))
+                    ST_SetSRID(ST_GeomFromGeoJSON(%s), 32630),
+                    %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 gss_code,
@@ -175,6 +180,14 @@ def store_candidate_sites(
                 site["mean_bsi"],
                 site.get("matched_site_reference", None),
                 geometry_json,
+                site.get("std_bsi"),
+                site.get("mean_ndvi"),
+                site.get("std_ndvi"),
+                site.get("mean_b04"),
+                site.get("mean_b08"),
+                site.get("mean_b11"),
+                site.get("compactness"),
+                site.get("prior_date_count"),
             ),
         )
     connection.commit()
