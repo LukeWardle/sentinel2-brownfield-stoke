@@ -1,32 +1,38 @@
 """
 database_query.py - Runtime database queries and candidate site storage.
 ========================================================================
-Provides five functions for interacting with the sentinel2_brownfield
+Provides functions for interacting with the sentinel2_brownfield
 PostgreSQL database at runtime. get_db_connection creates a single
-connection using credentials from .env, which is passed into all
-subsequent functions. retrieve_council_boundary_gss retrieves a council
-boundary polygon by GSS code for AOI clipping. retrieve_brownfield_register_data
-retrieves all register sites for a given council and year for candidate
-site matching. store_candidate_sites and store_pipeline_metadata write
-pipeline results to the database after each run.
+connection using the centralised settings layer (src.settings, P0-3),
+which is passed into all subsequent functions. retrieve_council_boundary_gss
+retrieves a council boundary polygon by GSS code for AOI clipping.
+retrieve_brownfield_register_data retrieves all register sites for a given
+council and year for candidate site matching. store_candidate_sites and
+store_pipeline_metadata write pipeline results to the database after each
+run.
 
-FND-3: store_candidate_sites now persists each candidate's footprint
-geometry (GeoJSON from clustering.generate_boundary_polygons, EPSG:32630)
-into the candidate_sites.geom column added by migration 003. Sites without
-a geometry store NULL, so the pipeline remains valid before the migration
-is applied or when a site has no traceable footprint.
+FND-3: store_candidate_sites persists each candidate's footprint geometry
+(GeoJSON from clustering.generate_boundary_polygons, EPSG:32630) into the
+candidate_sites.geom column added by migration 003. Sites without a
+geometry store NULL.
 
-Credentials are loaded from .env and must never be hardcoded or committed
-to version control.
+P0-9: detect_register_changes derives the latest available register year
+per GSS code dynamically rather than hardcoding a year, so it works for
+any council and any loaded register vintage.
+
+Credentials come from DATABASE_URL via src.settings and must never be
+hardcoded or committed to version control.
 """
 
 import json
-import os
+import sys
+from pathlib import Path
 
 import psycopg2
-from dotenv import load_dotenv
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.settings import get_settings
 
 
 def retrieve_council_boundary_gss(gss_code: str, connection) -> dict:
@@ -239,11 +245,12 @@ def store_pipeline_metadata(
 
 def get_db_connection():
     """
-    Creates and returns a connection to the brownfield detection PostgreSQL database
-    using the DATABASE_URL environment variable. Works for any Postgres
-    endpoint that accepts a libpq URI — local Postgres, Supabase, or any
-    other hosted provider. Call once in main.py or a setup script and pass
-    the returned connection into all database functions.
+    Creates and returns a connection to the brownfield detection PostgreSQL
+    database using DATABASE_URL from the centralised settings layer (P0-3).
+    Works for any Postgres endpoint that accepts a libpq URI — local
+    Postgres, Supabase, or any other hosted provider. Call once in main.py
+    or a setup script and pass the returned connection into all database
+    functions.
 
     Expected DATABASE_URL format:
         postgresql://user:password@host:port/dbname[?options]
@@ -256,7 +263,7 @@ def get_db_connection():
     Raises:
         ValueError: If DATABASE_URL is not set, or the connection fails.
     """
-    db_url = os.getenv("DATABASE_URL")
+    db_url = get_settings().database_url
     if not db_url:
         raise ValueError(
             "DATABASE_URL environment variable is not set. "
@@ -332,6 +339,10 @@ def detect_register_changes(
     year_from and year_to were removed (likely developed). Sites with
     start_date between year_from and year_to were newly added.
 
+    The register vintage searched is the latest year loaded for the GSS
+    code, derived dynamically (P0-9) — no hardcoded year, so the query
+    works for any council and any register load.
+
     Args:
         gss_code (str): GSS code for the council area to analyse.
         year_from (int): The earlier year to compare from.
@@ -360,13 +371,13 @@ def detect_register_changes(
         SELECT site_reference, name_address
         FROM brownfield_sites
         WHERE gss_code = %s
-        AND year = 2026
+        AND year = (SELECT MAX(year) FROM brownfield_sites WHERE gss_code = %s)
         AND end_date IS NOT NULL
         AND EXTRACT(YEAR FROM end_date) > %s
         AND EXTRACT(YEAR FROM end_date) <= %s
         ORDER BY end_date, site_reference
     """,
-        (gss_code, year_from, year_to),
+        (gss_code, gss_code, year_from, year_to),
     )
 
     removed = [
@@ -379,13 +390,13 @@ def detect_register_changes(
         SELECT site_reference, name_address
         FROM brownfield_sites
         WHERE gss_code = %s
-        AND year = 2026
+        AND year = (SELECT MAX(year) FROM brownfield_sites WHERE gss_code = %s)
         AND start_date IS NOT NULL
         AND EXTRACT(YEAR FROM start_date) > %s
         AND EXTRACT(YEAR FROM start_date) <= %s
         ORDER BY start_date, site_reference
     """,
-        (gss_code, year_from, year_to),
+        (gss_code, gss_code, year_from, year_to),
     )
 
     added = [

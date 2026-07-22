@@ -440,3 +440,59 @@ Following the July 2026 strategy revision, the product is framed as off-market l
 - Ownership integration (HMLR/Land Registry) and developability scoring for qualified leads
 - Data-licensing and commercial-terms review, including the OSM/ODbL question (P4-8)
 - Supabase migration and a light hosted interface
+
+
+## P0 batch — 22 July 2026 (settings, containerisation, API robustness)
+
+**[DECISION] Centralised settings layer (P0-3).** All configuration is read
+through `src/settings.py` (pydantic-settings): `DATABASE_URL`,
+`COPERNICUS_USERNAME`, `COPERNICUS_PASSWORD`, sourced from the environment
+then `.env`. `database_query.get_db_connection` and
+`api_copernicus.authenticate` consume it; no module calls
+`os.getenv`/`load_dotenv` for these values any more. DATABASE_URL is the
+sole DB contract — discrete DB_* variables are dead.
+
+**[DECISION] PCA is visualisation-only (P0-7).** EDA 07 confirmed the PCA
+projection passed into clustering was never used; detection is BSI/NDVI
+thresholds plus connected components. The dead parameter is removed:
+`group_pixels_for_candidate_sites(mask, original_shape, bsi_array,
+ndvi_array, ...)`. main.py computes PCA solely for the false-colour map
+and the report's variance summary. Any future spectral model enters via
+the classifier workstream (Notebook 07/08 architecture decision), not by
+resurrecting this parameter.
+
+**[DECISION] Copernicus auth is a refreshable bundle (P0-10).**
+`authenticate()` returns `{access_token, refresh_token, expires_at}`;
+`ensure_fresh()` refreshes via the refresh-token grant (password fallback)
+inside a 60s expiry margin. `download_safe` accepts the bundle, refreshes
+before every attempt and treats a mid-stream 401 as forced-refresh-and-
+retry, so 600MB+ SAFE downloads survive the ~10-minute token lifetime.
+A bare token string is still accepted for back-compatibility (no refresh).
+
+**[DECISION] search_products uses the shared connection (P0-8).** The
+pipeline's single `get_db_connection()` connection is passed in; the
+module no longer opens (or closes) its own, honouring the one-connection
+design and removing the api->database import.
+
+**[CHANGE] Register year is dynamic (P0-9).** `detect_register_changes`
+derives the register vintage as `MAX(year)` for the GSS code — the
+hardcoded 2026 is gone, matching the behaviour already used by
+`match_candidate_to_register`.
+
+**[CHANGE] Dependencies split and pinned (P0-4).** `requirements.txt` is
+runtime-only (including the previously undeclared `pyproj` and the new
+`pydantic-settings`); dev/notebook tooling moved to `requirements-dev.txt`;
+CI installs `requirements-ci.txt`.
+
+**[CHANGE] Containerised local stack (P0-5).** `Dockerfile` (python:3.11-slim;
+rasterio/pyproj wheels bundle GDAL/PROJ), `docker-compose.yml` (PostGIS
+16-3.5 with `migrations/` auto-applied on first init) and a `Makefile`
+with `db` / `run` / `test` / `psql` targets.
+
+**[CHANGE] Evaluation report artifact (P1-2).**
+`python -m src.evaluation --gss_code E06000021 --report` writes
+`metrics_<gss>_<ts>.json` (register recall/precision/F1, labelled
+precision when a labels CSV is supplied, caveats embedded) and a PR-curve
+PNG ranking candidates by mean BSI against register-match labels. The
+mean-BSI curve is the recorded baseline to beat — EDA 07 predicts it is
+near-flat.

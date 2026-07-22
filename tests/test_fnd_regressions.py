@@ -28,7 +28,7 @@ def _synthetic_scene():
     distinct components of exactly 4 true pixels each. The dilation ring
     around each block still sweeps in non-candidate pixels — the FND-1 trap —
     so membership equalling the true 4-pixel set proves the fix.
-    Returns (X_reduced, mask, original_shape, bsi, ndvi, candidate_flat_indices).
+    Returns (mask, original_shape, bsi, ndvi, candidate_flat_indices).
     """
     original_shape = (16, 16)
     n_pixels = 16 * 16
@@ -51,17 +51,15 @@ def _synthetic_scene():
     for idx in candidate_flat:
         bsi[idx] = 0.5  # passes bsi > threshold
         ndvi[idx] = 0.0  # passes ndvi < threshold
-
-    X_reduced = np.zeros((n_pixels, 3))
-    return X_reduced, mask, original_shape, bsi, ndvi, set(candidate_flat)
+    return mask, original_shape, bsi, ndvi, set(candidate_flat)
 
 
 # --- FND-1: group membership excludes dilation-added pixels ---
 def test_fnd1_membership_contains_only_true_candidates():
     """Every pixel index in every group must have passed the thresholds."""
-    X, mask, shape, bsi, ndvi, true_candidates = _synthetic_scene()
+    mask, shape, bsi, ndvi, true_candidates = _synthetic_scene()
     groups = group_pixels_for_candidate_sites(
-        X, mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
+        mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
     )
     assert groups, "expected candidate groups from the synthetic scene"
     all_members = {idx for indices in groups.values() for idx in indices}
@@ -76,9 +74,9 @@ def test_fnd1_membership_contains_only_true_candidates():
 def test_fnd1_two_separate_sites_each_four_pixels():
     """The scene yields two distinct sites, each of exactly 4 true pixels —
     proving dilation connects for labelling without merging or inflating."""
-    X, mask, shape, bsi, ndvi, _ = _synthetic_scene()
+    mask, shape, bsi, ndvi, _ = _synthetic_scene()
     groups = group_pixels_for_candidate_sites(
-        X, mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
+        mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
     )
     assert len(groups) == 2
     props = calculate_site_properties(groups, bsi, mask, shape, TILE)
@@ -91,9 +89,9 @@ def test_fnd1_size_filter_applies_to_true_count():
     """min_pixels gates the TRUE candidate count, not the dilated blob size.
     Each block has 4 true candidates; the dilated blobs are far larger, so
     min_pixels=5 must filter both sites out."""
-    X, mask, shape, bsi, ndvi, _ = _synthetic_scene()
+    mask, shape, bsi, ndvi, _ = _synthetic_scene()
     groups = group_pixels_for_candidate_sites(
-        X, mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=5
+        mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=5
     )
     assert groups == {}, "4-pixel sites must be filtered when min_pixels=5"
 
@@ -110,9 +108,9 @@ def _shoelace_area(ring):
 
 def test_fnd2_polygons_are_valid_geojson():
     """Each site geometry is a Polygon/MultiPolygon with closed rings."""
-    X, mask, shape, bsi, ndvi, _ = _synthetic_scene()
+    mask, shape, bsi, ndvi, _ = _synthetic_scene()
     groups = group_pixels_for_candidate_sites(
-        X, mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
+        mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
     )
     polygons = generate_boundary_polygons(groups, mask, shape, TILE)
     assert len(polygons) == len(groups)
@@ -133,9 +131,9 @@ def test_fnd2_polygons_are_valid_geojson():
 def test_fnd2_polygon_area_equals_pixel_footprint():
     """Each separated 2x2 block at 20m resolution traces to exactly 1600 m^2.
     Blocks are spaced so each site is a single solid Polygon with no holes."""
-    X, mask, shape, bsi, ndvi, _ = _synthetic_scene()
+    mask, shape, bsi, ndvi, _ = _synthetic_scene()
     groups = group_pixels_for_candidate_sites(
-        X, mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
+        mask, shape, bsi, ndvi, bsi_threshold=0.1, ndvi_threshold=0.2, min_pixels=2
     )
     polygons = generate_boundary_polygons(groups, mask, shape, TILE)
     for entry in polygons:
