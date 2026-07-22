@@ -111,7 +111,13 @@ def mock_data():
 def get_patches(mock_data, safe_path="/tmp/test.SAFE"):
     """Returns a dict of all patches needed for run_pipeline tests."""
     return {
-        "src.main.get_access_token": MagicMock(return_value=mock_data["token"]),
+        "src.main.authenticate": MagicMock(
+            return_value={
+                "access_token": mock_data["token"],
+                "refresh_token": "refresh",
+                "expires_at": 9.9e9,
+            }
+        ),
         "src.main.search_products": MagicMock(return_value=[mock_data["product"]]),
         "src.main.download_safe": MagicMock(return_value=safe_path),
         "src.main.get_db_connection": MagicMock(return_value=mock_data["conn"]),
@@ -349,7 +355,7 @@ def test_run_pipeline_deletes_safe_file_after_processing(tmp_path, mock_data):
 def test_run_pipeline_calls_copernicus_api(tmp_path, mock_data):
     """Tests that the Copernicus API is called to download the SAFE file."""
     mocks = run_with_mocks("E06000021", "2026-05-25", str(tmp_path), mock_data)
-    mocks["src.main.get_access_token"].assert_called_once()
+    mocks["src.main.authenticate"].assert_called_once()
     mocks["src.main.search_products"].assert_called_once()
     mocks["src.main.download_safe"].assert_called_once()
 

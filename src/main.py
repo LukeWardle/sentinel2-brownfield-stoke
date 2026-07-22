@@ -8,10 +8,10 @@ GSS code and image date as inputs rather than a manual SAFE path.
 
 All Version 2 modules are called in sequence:
 api_copernicus → data_loading_satellite → aoi_clipping → scl_filtering
-→ validation_satellite → preprocess → pca → clustering → exclusion_filter
-→ (persistence_filter) → database_query → visualise
+→ validation_satellite → preprocess → pca (visualisation only) → clustering
+→ exclusion_filter → (persistence_filter) → database_query → visualise
 
-Detection-quality steps (FND / P1 workstream):
+Detection-quality steps (FND / P0 / P1 workstream):
 - Candidate footprints are captured as valid GeoJSON geometry (FND-2) and
   stored alongside each site (FND-3, migration 003).
 - The exclusion filter drops candidates majority-inside hard exclusion
@@ -20,6 +20,11 @@ Detection-quality steps (FND / P1 workstream):
   printed every run — a validation metric, never a mask override.
 - Optional temporal persistence (P1-4, --min_persistence) requires
   candidates to recur near the same location on prior image dates.
+- Copernicus auth is a refreshable token bundle so 600MB+ downloads
+  survive token expiry (P0-10); the API search uses the pipeline's single
+  shared database connection (P0-8).
+- PCA feeds only the false-colour visualisation; detection is BSI/NDVI
+  thresholds plus connected components (P0-7).
 """
 
 import os
@@ -33,7 +38,7 @@ import rasterio
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.aoi_clipping import clip_to_council_boundary
-from src.api_copernicus import download_safe, get_access_token, search_products
+from src.api_copernicus import authenticate, download_safe, search_products
 from src.clustering import (
     calculate_site_properties,
     generate_boundary_polygons,
@@ -149,11 +154,14 @@ def run_pipeline(
         validate_council_boundary_gss(gss_code, conn)
 
         # --- Step 2: Download SAFE file via Copernicus API ---
+        # authenticate() returns a refreshable token bundle (P0-10) so the
+        # download survives token expiry; search_products uses the shared
+        # pipeline connection (P0-8).
         print("Authenticating with Copernicus API...")
-        token = get_access_token()
+        auth = authenticate()
 
         print(f"Searching for Sentinel-2 image for {gss_code} on {image_date}...")
-        products = search_products(gss_code, image_date, token)
+        products = search_products(gss_code, image_date, auth["access_token"], conn)
         best_product = products[0]
         print(
             f"Found: {best_product['product_name']} — cloud cover: {best_product['cloud_cover']}"
@@ -164,7 +172,7 @@ def run_pipeline(
         safe_path = download_safe(
             best_product["product_id"],
             best_product["product_name"],
-            token,
+            auth,
             raw_data_dir,
         )
         print(f"Downloaded to: {safe_path}")
@@ -210,8 +218,10 @@ def run_pipeline(
         bsi_array = compute_bsi(normalised_array, bands_20m, bands_10m)
         ndvi_array = compute_ndvi(normalised_array, bands_20m, bands_10m)
 
-        # --- Step 10: PCA ---
-        print("Running PCA spectral decomposition...")
+        # --- Step 10: PCA (visualisation only, P0-7) ---
+        # PCA feeds the false-colour map and the variance summary in the PDF
+        # report. It plays no part in detection, which is BSI/NDVI thresholds.
+        print("Running PCA spectral decomposition for visualisation...")
         centred_array = centre_data(normalised_array)
         covariance_matrix = compute_covariance(centred_array)
         eigenvalues, eigenvectors = spectral_decomposition(covariance_matrix)
@@ -220,13 +230,11 @@ def run_pipeline(
         )
         k = cumulative_variance_for_k(sorted_eigenvalues)
         k = max(k, 3)
-        X_reduced = project(centred_array, sorted_eigenvectors, k)
         X_for_map = project(centred_array, sorted_eigenvectors, 3)
 
         # --- Step 11: Clustering ---
         print("Grouping pixels into candidate sites...")
         candidate_groups = group_pixels_for_candidate_sites(
-            X_reduced,
             mask,
             original_shape,
             bsi_array,

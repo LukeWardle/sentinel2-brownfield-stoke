@@ -11,6 +11,11 @@ generate_boundary_polygons converts each group's pixel footprint into a
 valid GeoJSON Polygon or MultiPolygon in UTM coordinates for database
 storage, exclusion overlap testing and Folium map display.
 
+P0-7: detection is driven purely by the BSI/NDVI thresholds. The PCA
+projection previously accepted as a parameter was never used in this
+module and has been removed; PCA now exists solely for the false-colour
+visualisation in main.py.
+
 FND-1: morphological dilation is used only as a connectivity scaffold for
 labelling. Group membership is the intersection of each labelled blob with
 the original (pre-dilation) candidate map, so dilation-border pixels that
@@ -30,7 +35,6 @@ from rasterio.transform import from_origin
 
 
 def group_pixels_for_candidate_sites(
-    X_reduced: np.ndarray,
     mask: np.ndarray,
     original_shape: tuple,
     bsi_array: np.ndarray,
@@ -53,8 +57,6 @@ def group_pixels_for_candidate_sites(
     BSI/NDVI thresholds.
 
     Args:
-        X_reduced (np.ndarray): Shape (pixels, k) — PCA-reduced spectral values
-                                for each valid pixel, output of pca.project.
         mask (np.ndarray): Shape (original_height * original_width,) — boolean
                            mask from scl_filtering.mask_nodata marking which
                            pixels in the original flattened array are valid.
