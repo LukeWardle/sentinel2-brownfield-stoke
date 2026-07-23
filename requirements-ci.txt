@@ -12,4 +12,5 @@ reportlab
 pandas
 ijson
 scikit-learn
+responses
 pytest

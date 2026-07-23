@@ -11,3 +11,4 @@ notebook
 ipykernel
 scikit-learn~=1.7    # Notebook 08 classifier work
 openpyxl~=3.1        # register .xlsx ingestion in notebooks
+responses~=0.25       # P1-10 recorded-response API tests
