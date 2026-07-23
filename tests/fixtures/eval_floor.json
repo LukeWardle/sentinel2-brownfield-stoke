@@ -1,0 +1,4 @@
+{
+  "_comment": "P1-3 precision floor for the frozen labelled sample. 0.5 is a PLACEHOLDER agreed-nowhere value - set the real floor from the first honest labelled precision measurement once P1-1 produces frozen_labels.csv, and log the choice in DESIGN.md.",
+  "precision_floor": 0.5
+}
