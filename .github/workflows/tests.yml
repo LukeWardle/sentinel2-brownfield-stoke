@@ -51,9 +51,10 @@ jobs:
 
       - name: Set up database schema
         run: |
-          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -f migrations/001_initial_schema.sql
-          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -f migrations/002_exclusion_zones.sql
-          PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -f migrations/003_candidate_geometry.sql
+          for f in migrations/*.sql; do
+            echo "Applying $f"
+            PGPASSWORD=postgres123 psql -h 127.0.0.1 -U postgres -d sentinel2_brownfield -f "$f"
+          done
 
       - name: Run unit tests
         run: |
