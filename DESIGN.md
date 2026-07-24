@@ -367,7 +367,7 @@ Sentinel-2 bands are highly correlated — adjacent wavelengths capture similar 
 - **Determinism** — PCA always produces the same result for the same input. UMAP and t-SNE are non-deterministic, producing different results on each run, which is incompatible with reproducible pipeline outputs.
 - **Global structure preservation** — PCA preserves global spectral relationships across the full tile. UMAP and t-SNE are designed for local structure and visualisation, not feature extraction. They cannot project new data points consistently, which is required when the pipeline processes a new image.
 - **Speed** — PCA on 21 million pixels via numpy covariance decomposition runs in under 30 seconds on a standard laptop. Autoencoders require GPU training and are overkill for 10 input dimensions.
-- **Established precedent** — PCA is the standard dimensionality reduction approach in multispectral remote sensing. The Alan Turing Institute's DemoLand project and the broader satellite land classification literature use PCA for exactly this purpose.
+- **Established precedent** — PCA is a standard dimensionality reduction approach in multispectral remote sensing. [UNVERIFIED: an earlier draft cited the Alan Turing Institute's DemoLand project as using PCA for this purpose. DemoLand is a land-use scenario modelling tool, not a detector, and its use of PCA has not been confirmed - do not rely on this citation until checked.]
 
 The variance threshold was lowered from 0.95 to 0.80 with a minimum k=3 enforced in main.py, after finding that k=2 at 0.95 threshold was insufficient to discriminate between urban land cover types within Stoke.
 
