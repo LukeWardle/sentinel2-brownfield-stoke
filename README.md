@@ -29,9 +29,9 @@ No commercial tool currently identifies *unregistered* brownfield land from sate
 - **21,223,650** valid pixels in full Sentinel-2 tile
 - **233,603** pixels after AOI clipping to Stoke boundary (1.1% of tile)
 - **1,951** brownfield candidate pixels (BSI>0.1, NDVI<0.2)
-- **218** candidate sites after connected-component analysis and size filtering
+- ~90 candidate sites (provisional, min_pixels=5, single May 2026 date; earlier 218 figure was a dilation-bug artefact, see DESIGN.md)
 - **39** sites matched to the 2024 brownfield register (17.9% recall)
-- **179** potential unregistered brownfield sites identified
+- ~60 unregistered candidates (provisional; not yet validated as sellable - July 2026 labelling found 0/19 sellable, see notebooks/08)
 
 ### Detection Quality Status
 A July 2026 labelling pilot found the raw unregistered candidates are dominated by land-use false positives, and a July 2026 math/algorithm audit identified correctness fixes to detection itself. The Detection Correctness Foundation workstream (FND-1 to FND-6) plus the exclusion filter, temporal persistence and the evaluation harness address this; precision and recall for the corrected pipeline are measured by `src/evaluation.py` rather than quoted from the raw Version 2 run above. A live Stoke measurement drove one key design decision: building and infrastructure land use are NOT hard exclusions, because 70 and 32 registered brownfield sites respectively fall inside them — registered brownfield IS previously-developed land. Those classes return as classifier features in the planned supervised model.
@@ -48,7 +48,7 @@ A July 2026 labelling pilot found the raw unregistered candidates are dominated 
 ### Why 17.9% Recall?
 Registered brownfield sites in Stoke have a mean BSI of 0.005 and NDVI of 0.21 — meaning they are predominantly vegetated at the time of the May 2026 image. The BSI/NDVI threshold approach detects only currently bare land. The 39 matched sites are registered brownfield that happen to be bare in May 2026. The unregistered candidates are bare soil sites not appearing on any register — the primary finding of the system.
 
-The Version 3 supervised Random Forest classifier will be trained on all 218 registered sites including vegetated ones, dramatically improving recall.
+A Version 3 supervised classifier was planned to train on register sites including vegetated ones. NOTE: a classifier trained on threshold-gated candidates cannot see vegetated register sites, since they never pass the gate - see notebooks/06 corrections. Recall improvement from this route is not established.
 
 ---
 
@@ -65,7 +65,7 @@ The Version 3 supervised Random Forest classifier will be trained on all 218 reg
 
 ## Competitive Context
 
-Nimbus Maps, LandTech/LandInsight and SearchLand all overlay the existing brownfield register on a map — they show what is already known. This system identifies brownfield land that does not appear on any register, using satellite spectral analysis. The Alan Turing Institute's DemoLand project validated this approach for Newcastle but was never commercialised. No commercial tool currently performs satellite-based unregistered brownfield detection.
+Nimbus Maps, LandTech/LandInsight and SearchLand aggregate ownership, planning history, constraints and comparables; LandInsight additionally filters sites by state (in use / vacant / demolished) from business-rates data. None are known to use satellite detection of unregistered land. Whether that absence is an opportunity or a sign the approach does not work is, as of the July 2026 persistence validation, an open question - see notebooks/08.
 
 ---
 
