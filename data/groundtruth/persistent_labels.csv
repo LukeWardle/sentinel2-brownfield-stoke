@@ -1,0 +1,20 @@
+﻿candidate_id,hectares,compactness,maps_url,label,site_name,notes
+1362,1.44,0.032,"https://www.google.com/maps/@53.002879,-2.212970,250m/data=!3m1!1e3",active_institutional,Royal Stoke University Hospital,
+1361,0.60,0.082,"https://www.google.com/maps/@53.004016,-2.130715,250m/data=!3m1!1e3",active_industrial,"Mossfield Road estate - D&G Bus, IAE",
+1320,0.60,0.184,"https://www.google.com/maps/@53.074834,-2.199586,250m/data=!3m1!1e3",active_institutional,Ormiston Horizon Academy,
+1367,0.60,0.097,"https://www.google.com/maps/@52.997635,-2.117115,250m/data=!3m1!1e3",active_industrial,Park Hall Business Village,
+1371,0.52,0.113,"https://www.google.com/maps/@52.992636,-2.148153,250m/data=!3m1!1e3",active_industrial,Fenton - Victoria Industrial Complex,
+1319,0.48,0.094,"https://www.google.com/maps/@53.076807,-2.176526,250m/data=!3m1!1e3",heritage_constrained,"Chatterley Whitfield Colliery - scheduled monument, part active enterprise centre",
+1350,0.44,0.154,"https://www.google.com/maps/@53.021530,-2.184783,250m/data=!3m1!1e3",active_retail,"Holdcroft car dealership - stock yards and accident repair centre, Clough St Hanley",
+1375,0.36,0.126,"https://www.google.com/maps/@52.988066,-2.176800,250m/data=!3m1!1e3",car_park,"bet365 Stadium car park, Sideway","car_park is already a hard exclusion class; survived because this car park is not mapped in exclusion_zones - OSM coverage gap, not a logic gap"
+1364,0.36,0.283,"https://www.google.com/maps/@53.000138,-2.177530,250m/data=!3m1!1e3",active_industrial,"Hyde Park Industrial Estate, Whieldon Road",
+1331,0.36,0.087,"https://www.google.com/maps/@53.053129,-2.211864,250m/data=!3m1!1e3",active_industrial,"Daniel Platts Business Park, Charles Clowes Drive Tunstall",
+1370,0.32,0.208,"https://www.google.com/maps/@52.995672,-2.211371,250m/data=!3m1!1e3",active_industrial,"Premier Foods Stoke Bakery, Clayton Lane",factory roofs and service yards
+1353,0.32,0.310,"https://www.google.com/maps/@53.012610,-2.200107,250m/data=!3m1!1e3",active_industrial,"MAN Truck & Bus / Beech's Garage, Shelton New Road",workshop roof and HGV yard
+1329,0.32,0.128,"https://www.google.com/maps/@53.054757,-2.218312,250m/data=!3m1!1e3",active_industrial,"Browns Distribution, Chemical Lane Tunstall",
+1368,0.24,0.188,"https://www.google.com/maps/@52.996934,-2.150903,250m/data=!3m1!1e3",active_industrial,"Fen Park Industrial Estate, Park Lane Fenton",north-light sawtooth factory roof
+1323,0.24,0.233,"https://www.google.com/maps/@53.068114,-2.222784,250m/data=!3m1!1e3",active_industrial,"Churchill China works, Marlborough Way Tunstall",
+1377,0.20,0.194,"https://www.google.com/maps/@52.987260,-2.195644,250m/data=!3m1!1e3",active_industrial,"Michelin / Waters Edge Business Park, Campbell Road","internal roads, roofs and plant hardstanding"
+1327,0.20,0.321,"https://www.google.com/maps/@53.056269,-2.191018,250m/data=!3m1!1e3",construction,"Haywood Hospital, Burslem - development site off Haywood Rd","active construction in Google imagery (©2026, exact date unknown); cannot determine whether work began before or after the 2025-09 to 2026-07 scene window"
+1374,0.20,0.321,"https://www.google.com/maps/@52.991838,-2.171007,250m/data=!3m1!1e3",active_industrial,"Grove Road / Kemball Avenue works, Fenton - Gardiner's, DePe Gear",north-light sawtooth roofs and materials yard
+1332,0.20,0.194,"https://www.google.com/maps/@53.053050,-2.204147,250m/data=!3m1!1e3",active_industrial,"Scotia Business Park, Tunstall",
