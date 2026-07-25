@@ -9,6 +9,7 @@ from src.preprocess import (
     centre_data,
     compute_bsi,
     compute_covariance,
+    compute_ndbsi,
     compute_ndvi,
     normalise_band_array,
 )
@@ -206,6 +207,56 @@ def test_compute_bsi_single_pixel():
     band_array = np.random.rand(1, len(bands_20m) + len(bands_10m))
     result = compute_bsi(band_array, bands_20m, bands_10m)
     assert result.shape == (1,)
+
+
+# --- compute_ndbsi tests ---
+def make_ndbsi_bands():
+    """Creates a realistic normalised band array for NDBSI testing."""
+    pixels = 100
+    bands = len(bands_20m) + len(bands_10m)
+    return np.random.rand(pixels, bands), bands_20m, bands_10m
+
+
+def test_compute_ndbsi_returns_correct_shape():
+    """Tests that compute_ndbsi returns a 1D array with one value per pixel."""
+    band_array, b20, b10 = make_ndbsi_bands()
+    result = compute_ndbsi(band_array, b20, b10)
+    assert result.shape == (band_array.shape[0],)
+
+
+def test_compute_ndbsi_values_in_valid_range():
+    """Tests that NDBSI values are in the valid -1 to 1 range."""
+    band_array, b20, b10 = make_ndbsi_bands()
+    result = compute_ndbsi(band_array, b20, b10)
+    assert np.all(result >= -1.0)
+    assert np.all(result <= 1.0)
+
+
+def test_compute_ndbsi_known_value():
+    """B11=0.4 (SWIR1), B02=0.1 (blue): NDBSI = (0.4-0.1)/(0.4+0.1) = 0.6."""
+    pixels = 5
+    band_array = np.zeros((pixels, len(bands_20m) + len(bands_10m)))
+    b11_idx = bands_20m.index("B11")
+    b02_idx = len(bands_20m) + bands_10m.index("B02")
+    band_array[:, b11_idx] = 0.4
+    band_array[:, b02_idx] = 0.1
+    result = compute_ndbsi(band_array, bands_20m, bands_10m)
+    assert np.allclose(result, 0.6)
+
+
+def test_compute_ndbsi_zero_denominator_safe():
+    """B11 == B02 == 0 must return 0, not NaN or inf."""
+    band_array = np.zeros((3, len(bands_20m) + len(bands_10m)))
+    result = compute_ndbsi(band_array, bands_20m, bands_10m)
+    assert np.all(result == 0)
+    assert not np.any(np.isnan(result))
+
+
+def test_compute_ndbsi_returns_float():
+    """Tests that NDBSI output is float dtype."""
+    band_array, b20, b10 = make_ndbsi_bands()
+    result = compute_ndbsi(band_array, b20, b10)
+    assert np.issubdtype(result.dtype, np.floating)
 
 
 # --- compute_ndvi tests ---
