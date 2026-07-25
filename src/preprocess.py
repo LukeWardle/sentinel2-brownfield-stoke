@@ -112,6 +112,45 @@ def compute_bsi(band_array: np.ndarray, bands_20m: list, bands_10m: list) -> np.
     return bsi_array
 
 
+def compute_ndbsi(
+    band_array: np.ndarray, bands_20m: list, bands_10m: list
+) -> np.ndarray:
+    """
+    Computes the Normalised Difference Bare Soil Index (core form) using
+    the formulation ((B11-B02)/(B11+B02)).
+
+    NDBSI separates bare soil from impervious surfaces more reliably than BSI,
+    using SWIR1 (B11, highest soil reflectance) and blue (B02, lowest soil
+    reflectance). Ref: Liu et al. 2022, CATENA 214:106265.
+
+    Note: this is the verified core index only. The published method adds an
+    NDVI-based vegetation-suppression step which is NOT implemented here.
+
+    Args:
+        band_array (np.ndarray): shape (pixels, n_bands)
+        bands_20m (list): List of bands for 20m
+        bands_10m (list): List of bands for 10m
+
+    Returns:
+        ndbsi_array (np.ndarray): An array containing the NDBSI values in [-1, 1].
+    """
+    bands_list = bands_20m + bands_10m
+
+    # Find column index for B11 (SWIR1) and extract its values.
+    b11 = bands_list.index("B11")
+    b11_values = band_array[:, b11]
+
+    # Find column index for B02 (blue) and extract its values.
+    b02 = bands_list.index("B02")
+    b02_values = band_array[:, b02]
+
+    denominator = b11_values + b02_values
+    numerator = b11_values - b02_values
+    safe_denominator = np.where(denominator == 0, 1, denominator)
+    ndbsi_array = np.where(denominator == 0, 0, numerator / safe_denominator)
+    return ndbsi_array
+
+
 def compute_ndvi(
     band_array: np.ndarray, bands_20m: list, bands_10m: list
 ) -> np.ndarray:
