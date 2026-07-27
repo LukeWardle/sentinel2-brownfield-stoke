@@ -1,83 +1,112 @@
 # Sentinel-2 Brownfield Site Detection
-### Brownfield Detection Pipeline — Stoke-on-Trent Planning Intelligence Tool
+
+### A satellite detection pipeline for Stoke-on-Trent, and the reason it does not work
+
 ![Tests](https://github.com/LukeWardle/sentinel2-brownfield-stoke/actions/workflows/tests.yml/badge.svg)
 
-A satellite-based system for identifying potential brownfield land in Stoke-on-Trent using free Sentinel-2 imagery from the Copernicus Data Space Ecosystem. The system automatically downloads satellite images, applies spectral analysis to identify candidate brownfield sites, filters non-brownfield land use, cross-references candidates against the council's brownfield register, and produces an interactive map and PDF report for planning officials.
+A production pipeline which downloads Sentinel-2 L2A imagery from the Copernicus Data Space Ecosystem, clips it to a UK council boundary, computes spectral indices, clusters bare-ground pixels into candidate sites, filters them against land-use polygons, and stores the results with footprint geometry in PostGIS. It was built to identify unregistered brownfield land in Stoke-on-Trent.
 
-No commercial tool currently identifies *unregistered* brownfield land from satellite imagery. This system fills that gap.
-
----
-
-## What It Does
-
-1. **Downloads satellite imagery automatically** — authenticates with the Copernicus API and downloads Sentinel-2 L2A SAFE files for any UK council by GSS code and date
-2. **Applies AOI clipping** — clips the satellite image to the council boundary retrieved from PostgreSQL, reducing 21 million pixels to ~233,000 for Stoke-on-Trent
-3. **Computes spectral indices** — calculates Bare Soil Index (BSI) and Normalised Difference Vegetation Index (NDVI) across all valid pixels after normalising raw digital numbers to surface reflectance
-4. **Applies PCA spectral decomposition** — reduces 10 spectral bands to the most significant components
-5. **Detects candidate sites** — applies BSI>0.1 and NDVI<0.2 thresholds to identify bare soil candidate pixels, then uses connected-component analysis to group spatially adjacent candidates into discrete sites with valid footprint polygons
-6. **Filters non-brownfield land use** — drops candidates majority-inside land-use classes disjoint from brownfield (car parks, quarries, agriculture, amenity/leisure), computed as indexed PostGIS area-overlap against OpenStreetMap polygons, and reports the register recall guardrail every run
-7. **Optionally requires temporal persistence** — candidates must recur near the same location on prior image dates (`--min_persistence`)
-8. **Cross-references the brownfield register** — compares candidate sites against the brownfield register stored in PostgreSQL using 100m proximity matching
-9. **Produces professional outputs** — interactive Folium map, PDF report and false colour map
-10. **Stores results in database** — candidate sites (with footprint geometry) and pipeline run metadata stored in PostgreSQL for historical comparison and evaluation
+**It does not detect brownfield land. This repository documents the investigation that established why.**
 
 ---
 
-## Version 2 Results — Stoke-on-Trent, 25 May 2026
+## The finding
 
-### Pipeline Performance
-- **21,223,650** valid pixels in full Sentinel-2 tile
-- **233,603** pixels after AOI clipping to Stoke boundary (1.1% of tile)
-- **1,951** brownfield candidate pixels (BSI>0.1, NDVI<0.2)
-- ~90 candidate sites (provisional, min_pixels=5, single May 2026 date; earlier 218 figure was a dilation-bug artefact, see DESIGN.md)
-- **39** sites matched to the 2024 brownfield register (17.9% recall)
-- ~60 unregistered candidates (provisional; not yet validated as sellable - July 2026 labelling found 0/19 sellable, see notebooks/08)
+Registered brownfield land in Stoke-on-Trent is vegetated. Sampled directly at all 352 register locations rather than inferred from detector output, it has a mean NDVI of 0.234 and a mean BSI of −0.003. The detector's gate requires BSI above 0.1 and NDVI below 0.2.
 
-### Detection Quality Status
-A July 2026 labelling pilot found the raw unregistered candidates are dominated by land-use false positives, and a July 2026 math/algorithm audit identified correctness fixes to detection itself. The Detection Correctness Foundation workstream (FND-1 to FND-6) plus the exclusion filter, temporal persistence and the evaluation harness address this; precision and recall for the corrected pipeline are measured by `src/evaluation.py` rather than quoted from the raw Version 2 run above. A live Stoke measurement drove one key design decision: building and infrastructure land use are NOT hard exclusions, because 70 and 32 registered brownfield sites respectively fall inside them — registered brownfield IS previously-developed land. Those classes return as classifier features in the planned supervised model.
+**Zero of 352 register sites satisfy both conditions. Zero satisfy the BSI condition alone.** The highest BSI recorded anywhere in the register is 0.0843, below the threshold.
 
-### False Colour Map
-![False Colour Map](docs/images/false_colour_map.png)
+![Register sites against the detection gate](docs/images/register_vs_gate.png)
 
-### Candidate Site Locations
-![Candidate Site Locations](docs/images/candidate_site_locations.png)
+Recall against the register is therefore not low, it is structurally zero. Figures of 17.9% and 15.3–23.1% reported earlier in this project are artefacts of a 100 metre proximity match which credits a candidate with detecting a site it does not occupy. Tightening that radius reduces matches from 105 sites to 45 at 50 metres and 16 at 25 metres — a rate of collapse consistent with coincidental proximity in a dense urban area — and the median distance from a register site to the nearest candidate is 154 metres.
 
-### Threshold Calibration
-![Clustering Threshold Comparison](docs/images/clustering_threshold_comparison.png)
+Two independent labelling exercises confirm the consequence. Nineteen unregistered candidates from a single date, and a further nineteen surviving a four-season persistence filter, were inspected individually against aerial imagery. **All thirty-eight were false positives**: active industrial premises, hospital and school hardstanding, distribution loading yards, a stadium car park, an active construction site, and one scheduled monument.
 
-### Why 17.9% Recall?
-Registered brownfield sites in Stoke have a mean BSI of 0.005 and NDVI of 0.21 — meaning they are predominantly vegetated at the time of the May 2026 image. The BSI/NDVI threshold approach detects only currently bare land. The 39 matched sites are registered brownfield that happen to be bare in May 2026. The unregistered candidates are bare soil sites not appearing on any register — the primary finding of the system.
+The mechanism is that bare ground and previously developed land are close to disjoint populations in a city. Derelict land is colonised by vegetation within a season or two of abandonment. What remains reliably bare across every season is hardstanding *maintained* in that condition because it is in continuous use. The detector finds roofs and yards, which is what persistently bare ground in an urban area actually is.
 
-A Version 3 supervised classifier was planned to train on register sites including vegetated ones. NOTE: a classifier trained on threshold-gated candidates cannot see vegetated register sites, since they never pass the gate - see notebooks/06 corrections. Recall improvement from this route is not established.
+The measurement was available from the outset. Notebook 04 recorded a mean BSI of 0.005 at register sites in May 2026, three paragraphs from the section setting the gate threshold at 0.1. The two numbers were never compared, and three subsequent notebooks proceeded on the assumption that the detector partially reached the register and could be improved.
+
+Full analysis: [`notebooks/09_register_characterisation.ipynb`](notebooks/09_register_characterisation.ipynb).
 
 ---
 
-## Project Status
+## What the system does
+
+1. **Downloads satellite imagery** — authenticates with the Copernicus API and retrieves Sentinel-2 L2A SAFE files for any UK council by GSS code and date, with token refresh across long downloads
+2. **Clips to the council boundary** — retrieved from PostGIS, reducing 21 million tile pixels to ~233,000 for Stoke
+3. **Masks cloud and nodata** — SCL-based filtering, flattening to a `(valid_pixels, 10)` array
+4. **Computes spectral indices** — BSI, NDVI and NDBSI after normalising raw digital numbers to surface reflectance
+5. **Detects candidate sites** — threshold gate followed by connected-component clustering, with boundaries traced via `rasterio.features.shapes`
+6. **Filters land use** — drops candidates majority-inside classes disjoint from brownfield (car parks, quarries, agriculture, amenity/leisure) via indexed PostGIS area-overlap against OpenStreetMap polygons
+7. **Optionally requires temporal persistence** — candidates must recur near the same location on prior dates (`--min_persistence`)
+8. **Matches the register** — 100 metre proximity matching. *This is the defect described above; a polygon-containment test should replace it now that candidate geometry is persisted*
+9. **Produces outputs** — interactive Folium map, PDF report, false-colour map
+10. **Stores results** — candidates with footprint geometry, features and run metadata in PostgreSQL
+
+---
+
+## Pipeline performance — Stoke-on-Trent
+
+Measured over four seasonal scenes: 9 July 2026, 22 September 2025, 26 December 2025 and 25 May 2026.
+
+| Metric | Value |
+|---|---|
+| Valid pixels in full tile | 21,223,650 |
+| Pixels after AOI clipping | 233,603 (1.1% of tile) |
+| Candidate pixel share by season | 2.8% Jul · 1.7% Sep · 1.0% Dec · 0.8% May |
+| Candidate sites per scene | 251 Jul · 153 Sep · 72 Dec · 78 May |
+| Candidates bare across all four dates | 20 (19 unregistered) |
+| Sellable sites among those 19 | **0** |
+| Register recall at 25 m matching | 16 of 352 (4.5%) |
+| Register sites passing the detection gate | **0 of 352** |
+
+The seasonal gradient is physically coherent: bare-soil signal peaks in midsummer and declines through autumn into winter as illumination falls and vegetation senesces. The engineering works. The target is not in what it finds.
+
+### Why persistence made it worse
+
+Requiring bareness across four seasons removed 26 of 72 winter candidates as transient — ploughed ground, temporary works — which is the behaviour the filter was designed to produce. But persistence selects for *permanence of use*, not absence of it. A depot yard is bare in every season precisely because it is maintained. Derelict land greens over and is excluded. The filter selects against the target.
+
+---
+
+## Project status
 
 | Version | Status | Description |
 |---|---|---|
-| v1 | ✅ Complete | PCA spectral analysis, false colour map, results report |
-| v2 | ✅ Complete | Database, Copernicus API, BSI/NDVI clustering, interactive map, PDF report |
-| v3 | Planned | Supervised Random Forest classifier, Streamlit web interface, Supabase migration |
-| v4 | Planned | UK-wide multi-council expansion, automated scheduling |
+| v1 | Complete | PCA spectral analysis, false colour map, results report |
+| v2 | Complete | Database, Copernicus API, BSI/NDVI clustering, interactive map, PDF report |
+| v3 | Halted | Supervised classifier. Code shipped (`src/model_train.py`) but never trained: the candidate pool contains no positive examples |
+| v4 | Not started | UK-wide expansion. Not pursued — scaling a method that does not work at one council is not worthwhile |
 
 ---
 
-## Competitive Context
+## What would be required instead
 
-Nimbus Maps, LandTech/LandInsight and SearchLand aggregate ownership, planning history, constraints and comparables; LandInsight additionally filters sites by state (in use / vacant / demolished) from business-rates data. None are known to use satellite detection of unregistered land. Whether that absence is an opportunity or a sign the approach does not work is, as of the July 2026 persistence validation, an open question - see notebooks/08.
+The literature indicates this is a known unsolved problem rather than an implementation failure. Xu & Ehlers (2022) abandoned image classification for rule-based data fusion across 63 German districts and still reported brownfield specifically as difficult. Sun et al. (2023) state that separating vacant from operational industrial land cannot be done from image features alone, and solve it by adding land surface temperature and population density as non-image filters.
+
+Three directions follow, none of which is a modification of this pipeline:
+
+- **Non-image occupancy data.** UK business rates identify occupied hereditaments, and empty-property relief functions as a vacancy register. This is the active-versus-abandoned signal imagery cannot supply.
+- **Multi-year phenology.** Abandonment detection by NDVI trajectory reaches the high 80s in the cropland literature — non-abandoned land shows cyclical annual NDVI, abandoned land a rising trend under succession. This requires years of Landsat at 30 m, which is coarse against a median register site of 0.28 ha.
+- **A different target.** Change detection on *known* geometries — monitoring permitted sites for build-out — is what satellites are reliably good at, and has free ground truth in planning records. It reuses the ingest, clipping, masking, storage and matching layers unchanged.
 
 ---
 
-## Data Sources
+## Competitive context
+
+Nimbus Maps, LandTech/LandInsight and SearchLand aggregate ownership, planning history, constraints and comparables; LandInsight additionally filters sites by state (in use, vacant, demolished) from business-rates data. None are known to use satellite detection of unregistered land. Whether that absence represented an opportunity or a signal was an open question when this project began. The evidence here supports the latter reading.
+
+---
+
+## Data sources
 
 | Dataset | Source | Notes |
 |---|---|---|
 | Sentinel-2 L2A imagery | Copernicus Data Space Ecosystem | Free, downloaded automatically via API |
-| Brownfield register (manual) | DLUHC / data.gov.uk | Annual publication, 218 sites for Stoke-on-Trent 2019-2024 |
-| Brownfield register (automated) | planning.data.gov.uk API | 352 Stoke sites, 85% UK council coverage |
+| Brownfield register | planning.data.gov.uk API | 352 Stoke sites in the 2026 publication; 218 in the stable 2019–2024 releases |
 | UK council boundaries | ONS Open Geography Portal | 361 local authorities, stored in PostgreSQL |
-| Land-use exclusion polygons | OpenStreetMap (Overpass API) | Buildings, car parks, amenity/leisure, infrastructure, quarries, agriculture. Licensed under ODbL — see P4-8 licensing review; OS OpenData is the licence-clean fallback for building footprints |
+| Land-use exclusion polygons | OpenStreetMap (Overpass API) | Car parks, amenity/leisure, quarries, agriculture. ODbL licensed — OS OpenData is the licence-clean fallback |
+
+Building and infrastructure land use are deliberately **not** hard exclusions: 70 and 32 registered sites respectively fall inside them, because registered brownfield *is* previously developed land. The distinction needed is active versus abandoned, which land-use class alone does not supply.
 
 ---
 
@@ -85,7 +114,7 @@ Nimbus Maps, LandTech/LandInsight and SearchLand aggregate ownership, planning h
 
 ### Prerequisites
 - Python 3.11+
-- PostgreSQL 16 with PostGIS 3.5 (install via Chocolatey on Windows: `choco install postgresql16`)
+- PostgreSQL 16 with PostGIS 3.5
 - A Copernicus Data Space Ecosystem account (free at https://dataspace.copernicus.eu)
 
 ### Installation
@@ -100,30 +129,24 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Copy the template and fill in your values (never commit `.env`):
-
 ```bash
 cp .env.example .env
 ```
 
-Set two things in `.env`:
-- `COPERNICUS_USERNAME` and `COPERNICUS_PASSWORD` — your Copernicus Data Space account
-- `DATABASE_URL` — a single libpq connection string (local Postgres or Supabase). Percent-encode special characters in the password, e.g. `!` → `%21`. See `.env.example` for the Supabase format.
+Set in `.env`:
+- `COPERNICUS_USERNAME` and `COPERNICUS_PASSWORD`
+- `DATABASE_URL` — a single libpq connection string. Percent-encode special characters in the password, e.g. `!` → `%21`
 
 ### Pre-commit hooks
 
-This repo runs pre-commit to scan for secrets (gitleaks) and enforce
-formatting (ruff, black) before every commit. After cloning:
+```bash
+pip install pre-commit
+pre-commit install
+```
 
-    pip install pre-commit
-    pre-commit install
+Scans for secrets (gitleaks) and enforces formatting (ruff, black) on every commit. Run across all files with `pre-commit run --all-files`.
 
-Hooks then run automatically on `git commit`. Run them across all files
-manually with: `pre-commit run --all-files`.
-
-### Database Setup
-
-Create the database and enable PostGIS:
+### Database
 
 ```sql
 CREATE DATABASE sentinel2_brownfield;
@@ -131,146 +154,115 @@ CREATE DATABASE sentinel2_brownfield;
 CREATE EXTENSION postgis;
 ```
 
-Apply the schema migrations in order:
+Apply all migrations in order:
 
 ```bash
-psql -U postgres -d sentinel2_brownfield -f migrations/001_initial_schema.sql
-psql -U postgres -d sentinel2_brownfield -f migrations/002_exclusion_zones.sql
-psql -U postgres -d sentinel2_brownfield -f migrations/003_candidate_geometry.sql
+for f in migrations/*.sql; do psql -U postgres -d sentinel2_brownfield -f "$f"; done
 ```
 
-Load reference data (one-time setup):
+Load reference data:
 
 ```bash
 python scripts/setup_boundaries.py
 python scripts/setup_brownfield.py
-```
-
-Optionally download latest brownfield data from planning.data.gov.uk:
-
-```bash
-python scripts/download_brownfield_registers.py E06000021
-```
-
-Load OpenStreetMap land-use exclusion zones for a council (re-runnable; replaces existing rows per class):
-
-```bash
 python scripts/setup_exclusions.py E06000021
 ```
 
 ---
 
-## Running the Pipeline
+## Running the pipeline
 
 ```bash
-python src/main.py --gss_code E06000021 --date 2026-05-25
+python -m src.main --gss_code E06000021 --date 2026-05-25
 ```
 
-The pipeline accepts any UK council GSS code and image date. It downloads the relevant Sentinel-2 image automatically, processes it, and produces outputs in `outputs/`.
+Accepts any UK council GSS code and image date. Downloads the scene, processes it, and writes outputs to `outputs/`.
 
-To require candidates to persist across image dates (needs at least one prior stored run on a different date for the council):
+Requiring persistence across dates (needs at least one prior stored run for the council on a different date):
 
 ```bash
-python src/main.py --gss_code E06000021 --date 2026-06-14 --min_persistence 1
+python -m src.main --gss_code E06000021 --date 2026-07-09 --min_persistence 1
 ```
+
+**Note on scene selection.** The OData `cloudCover` attribute is measured across the whole ~110 km tile, not the council area, so it selects the wrong scenes in both directions. Dates must be inspected visually in Copernicus Browser, judging cloud over the boundary specifically.
 
 ---
 
 ## Evaluation
 
-Register recall (fraction of register sites detected by the latest run) is computed against the brownfield register, which serves as the pipeline's standing validation set:
-
 ```bash
-python -m src.evaluation --gss_code E06000021
+python -m src.evaluation --gss_code E06000021 --report
 ```
 
-Precision requires manual labels. Export the latest run's unregistered candidates to a labelling sheet, label each row per `docs/labelling_protocol.md`, then evaluate:
+Writes `outputs/metrics_<gss>_<timestamp>.json` and a PR-curve PNG.
+
+Precision requires manual labels:
 
 ```bash
 python scripts/export_labelling_sheet.py E06000021
-# ... fill the label column in the exported CSV ...
-python -m src.evaluation --gss_code E06000021 --labels outputs/labelling_sheet_E06000021_<stamp>.csv
+# label each row per docs/labelling_protocol.md
+python -m src.evaluation --gss_code E06000021 --labels outputs/labelling_sheet_<gss>_<stamp>.csv
 ```
 
----
+Ground truth from the four-season labelling exercise is committed at `data/groundtruth/persistent_labels.csv` — 19 sites, 0 sellable.
 
-## Outputs
-
-Each pipeline run produces three timestamped files in `outputs/`:
-
-- `false_colour_map_YYYYMMDD_HHMMSS.png` — PCA false colour map
-- `results_report_YYYYMMDD_HHMMSS.pdf` — Professional PDF report for planning officials
-- `interactive_map_GSSCODE_YYYYMMDD_HHMMSS.html` — Interactive Folium map of candidate sites
-
-Results are also stored in PostgreSQL:
-- `candidate_sites` table — all detected sites with coordinates, footprint geometry, size and register match status
-- `pipeline_runs` table — run metadata and summary statistics
+**Register recall as reported by this harness uses 100 metre matching and overstates detection.** See the finding above.
 
 ---
 
-## Running Tests
+## Testing
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-Comprehensive test suite run automatically in CI on every push and pull request (see the tests workflow).
+403 tests, run in CI on every push and pull request.
 
 ---
 
-## EDA Notebooks
+## Notebooks
+
+The investigation in order. Notebooks 04–08 carry correction blocks recording what was believed at the time and what later proved wrong; these are retained deliberately, since the sequence of corrections is part of the record.
 
 | Notebook | Description |
 |---|---|
-| 01_data_inspection_eda.ipynb | Initial Sentinel-2 data inspection |
-| 02_brownfield_register_eda.ipynb | Brownfield register analysis |
-| 03_boundary_file_eda.ipynb | UK council boundary file analysis |
-| 04_bsi_ndvi_calibration_eda.ipynb | BSI and NDVI calibration — critical finding that registered sites are vegetated |
-| 05_clustering_calibration_eda.ipynb | Clustering algorithm design and threshold calibration |
-| 06_pipeline_results_validation.ipynb | Version 2 pipeline results validation and analysis |
+| 01 | Initial Sentinel-2 data inspection |
+| 02 | Brownfield register analysis |
+| 03 | UK council boundary file analysis |
+| 04 | BSI/NDVI calibration — records mean BSI 0.005 at register sites, the measurement whose significance was missed |
+| 05 | Clustering design and threshold calibration |
+| 06 | Version 2 pipeline validation — source of the 17.9% recall figure, since retracted |
+| 07 | Classifier design — identifies the gate-ceiling problem architecturally |
+| 08 | Persistence validation — four seasonal scenes, 19/19 non-sellable |
+| 09 | Register characterisation — zero of 352 sites pass the gate |
 
 ---
 
 ## Documentation
 
-- [DESIGN.md](DESIGN.md) — Full architecture, module design and Version roadmap
-- [DATABASE.md](DATABASE.md) — PostgreSQL/PostGIS schema design and migration path
-- [EDA.md](EDA.md) — Exploratory data analysis findings
-- [data/README.md](data/README.md) — Data source download instructions
+- [DESIGN.md](DESIGN.md) — architecture, module design, decision log
+- [DATABASE.md](DATABASE.md) — schema design and migration path
+- [EDA.md](EDA.md) — exploratory findings
+
+---
+
+## Docker
+
+```bash
+docker compose up -d db
+docker compose run pipeline python -m src.main --gss_code E06000021 --date 2026-05-25
+```
+
+`docker compose down -v` resets the database. Credentials come from `.env` and are never baked into the image.
+
+## Dependency layout
+
+- `requirements.txt` — runtime
+- `requirements-dev.txt` — pytest, pre-commit, Jupyter, scikit-learn
+- `requirements-ci.txt` — what CI installs
 
 ---
 
 ## Licence
 
-MIT Licence — see LICENSE file for details.
-
-
-## Docker quickstart (P0-5)
-
-```bash
-docker compose up -d db        # PostGIS 16-3.5, migrations auto-applied on first init
-docker compose run pipeline python -m src.main --gss_code E06000021 --date 2026-05-25
-```
-
-`docker compose down -v` resets the database (drops the volume, so
-migrations re-run on next start). Credentials come from `.env` — see
-`.env.example`; they are never baked into the image.
-
-## Dependency layout (P0-4)
-
-- `requirements.txt` — runtime only (install for running the pipeline)
-- `requirements-dev.txt` — dev environment: pytest, pre-commit, Jupyter,
-  scikit-learn (installs runtime via `-r`)
-- `requirements-ci.txt` — what CI installs
-
-## Evaluation metrics report (P1-2)
-
-```bash
-python -m src.evaluation --gss_code E06000021 --report
-python -m src.evaluation --gss_code E06000021 --report --labels labels.csv
-```
-
-Writes `outputs/metrics_<gss>_<timestamp>.json` and a PR-curve PNG. The
-JSON embeds the caveats that make the numbers honest: register precision
-is a floor (unregistered finds are the product, not false positives), and
-register recall carries the vegetated-brownfield definitional ceiling.
+MIT — see LICENSE.
