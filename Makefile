@@ -3,7 +3,7 @@
 # (pacman/choco) or run the underlying commands directly — each target is
 # a single line for exactly that reason.
 
-.PHONY: db db-down run test psql
+.PHONY: db db-down run test psql app app-data
 
 db:
 	docker compose up -d db
@@ -19,3 +19,9 @@ test:
 
 psql:
 	docker compose exec db psql -U postgres -d sentinel2_brownfield
+
+app:
+	streamlit run app/streamlit_app.py
+
+app-data:
+	python scripts/export_app_data.py

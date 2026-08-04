@@ -1,0 +1,15 @@
+# app/requirements.txt — dependencies for the Streamlit app only (P3-1, #58).
+#
+# Streamlit Community Cloud searches the entrypoint's directory before the
+# repository root, so this file is what it installs — not the root
+# requirements.txt, which holds the pipeline runtime (rasterio, psycopg2,
+# reportlab) that the app has no use for.
+#
+# The app reads committed files under data/app/. It has no database driver and
+# no geospatial stack by design.
+
+streamlit~=1.60      # >=1.47 for the width= argument that replaced use_container_width
+pandas~=2.3
+altair~=5.5          # bundled with streamlit; pinned so charts render predictably
+folium~=0.20         # same pin as the pipeline's interactive map output
+streamlit-folium~=0.27

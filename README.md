@@ -68,6 +68,40 @@ Requiring bareness across four seasons removed 26 of 72 winter candidates as tra
 
 ---
 
+## The app
+
+A three-page Streamlit app presenting the investigation and this result for a
+non-technical reader. **Pipeline** — what the system does, the four seasonal
+scenes and the seasonal gradient. **Map** — the twenty persistent candidates as
+traced footprints over aerial imagery, coloured by what each turned out to be,
+with the register overlaid for comparison. **Finding** — the register against the
+gate, the 0 of 352 result and the mechanism.
+
+```bash
+pip install -r app/requirements.txt
+streamlit run app/streamlit_app.py
+```
+
+It reads committed files under `data/app/` and opens no database connection, so
+it runs from a bare checkout and deploys to Streamlit Community Cloud unchanged —
+set the main file path to `app/streamlit_app.py`, and Cloud installs
+`app/requirements.txt` in preference to the root `requirements.txt` because it
+searches the entrypoint's directory first. No secrets are required.
+
+Regenerating those files does need a database, and the two gate-sample exports
+additionally need the May 2026 SAFE scene under `raw_data/`:
+
+```bash
+python scripts/export_app_data.py
+```
+
+See [`data/app/README.md`](data/app/README.md) for what each file holds and the
+two traps in reading it. `tests/test_app_data.py` and
+`tests/test_streamlit_app.py` check the exports and render every page with
+`DATABASE_URL` removed from the environment.
+
+---
+
 ## Project status
 
 | Version | Status | Description |
@@ -216,7 +250,8 @@ Ground truth from the four-season labelling exercise is committed at `data/groun
 python -m pytest tests/ -v
 ```
 
-403 tests, run in CI on every push and pull request.
+439 tests, run in CI on every push and pull request. The app tests skip
+themselves where `streamlit` is not installed.
 
 ---
 
