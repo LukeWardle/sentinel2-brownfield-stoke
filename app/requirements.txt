@@ -10,6 +10,5 @@
 
 streamlit~=1.60      # >=1.47 for the width= argument that replaced use_container_width
 pandas~=2.3
-altair==5.4.1        # 5.5 breaks on Python 3.14 (TypedDict closed=True); pinned to last good
 folium~=0.20         # same pin as the pipeline's interactive map output
 streamlit-folium~=0.27
