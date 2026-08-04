@@ -1,0 +1,76 @@
+{
+  "gss_code": "E06000021",
+  "council": "Stoke-on-Trent",
+  "register_year": 2026,
+  "gate": {
+    "bsi_above": 0.1,
+    "ndvi_below": 0.2
+  },
+  "pipeline": {
+    "tile_valid_pixels": 21223650,
+    "aoi_pixels": 233603,
+    "scenes": 4,
+    "candidates_total": 554,
+    "candidates_by_season": {
+      "Summer": 251,
+      "Autumn": 153,
+      "Winter": 72,
+      "Spring": 78
+    },
+    "exclusion_polygons": 2988
+  },
+  "register": {
+    "sites": 352,
+    "median_hectares": 0.28,
+    "below_detection_floor": 136,
+    "detection_floor_ha": 0.2
+  },
+  "matching": {
+    "recall_by_radius": {
+      "100": 105,
+      "50": 45,
+      "25": 16,
+      "10": 6
+    },
+    "nearest_candidate_m": {
+      "median": 154.4,
+      "p25": 86.3,
+      "p75": 293.5,
+      "min": 0.5
+    }
+  },
+  "persistence": {
+    "match_radius_m": 50,
+    "anchor_date": "2025-12-26",
+    "winter_candidates": 72,
+    "by_dates_present": {
+      "1": 26,
+      "2": 11,
+      "3": 15,
+      "4": 20
+    },
+    "persistent_sites": 20,
+    "register_matched": 1,
+    "labelled": 19,
+    "sellable": 0,
+    "labels": {
+      "active_industrial": 13,
+      "active_institutional": 2,
+      "heritage_constrained": 1,
+      "active_retail": 1,
+      "car_park": 1,
+      "construction": 1
+    }
+  },
+  "gate_samples": {
+    "scene": "S2C_MSIL2A_20260525T110621_N0512_R137_T30UWD_20260525T144513.SAFE",
+    "sites_sampled": 352,
+    "passing_bsi": 0,
+    "passing_ndvi": 156,
+    "passing_gate": 0,
+    "max_bsi": 0.0843,
+    "mean_bsi": -0.0028,
+    "mean_ndvi": 0.2341,
+    "background_sample_size": 5000
+  }
+}

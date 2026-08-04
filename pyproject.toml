@@ -13,3 +13,8 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+# app/ is its own source root: Streamlit puts the entrypoint's directory on the
+# path, so the pages import data_access directly rather than as app.data_access.
+known-first-party = ["src", "app", "data_access"]

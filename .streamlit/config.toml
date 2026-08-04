@@ -1,0 +1,13 @@
+# Streamlit configuration (P3-1, issue #58).
+# Read from the repository root by `streamlit run` and by Streamlit Community
+# Cloud. The palette is the one the project's committed figures already use, so
+# the app and the notebook plots read as one piece of work.
+
+[theme]
+primaryColor = "#4a90a4"          # teal — the bare-soil series in every figure
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f2f4f5"
+textColor = "#22282b"
+
+[browser]
+gatherUsageStats = false

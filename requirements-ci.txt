@@ -14,3 +14,5 @@ ijson
 scikit-learn
 responses
 pytest
+streamlit          # P3-1: app render tests (tests/test_streamlit_app.py)
+streamlit-folium
