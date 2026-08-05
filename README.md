@@ -22,7 +22,7 @@ Recall against the register is therefore not low, it is structurally zero. Figur
 
 Two independent labelling exercises confirm the consequence. Nineteen unregistered candidates from a single date, and a further nineteen surviving a four-season persistence filter, were inspected individually against aerial imagery. **All thirty-eight were false positives**: active industrial premises, hospital and school hardstanding, distribution loading yards, a stadium car park, an active construction site, and one scheduled monument.
 
-The mechanism is that bare ground and previously developed land are close to disjoint populations in a city. Derelict land is colonised by vegetation within a season or two of abandonment. What remains reliably bare across every season is hardstanding *maintained* in that condition because it is in continuous use. The detector finds roofs and yards, which is what persistently bare ground in an urban area actually is.
+The mechanism is that bare ground and previously developed land are close to disjoint populations in a city. Derelict land is colonised by vegetation within a season or two of abandonment. What remains reliably bare across every season is hardstanding *maintained* in that condition because it is in continuous use. The detector finds roofs and yards, which is what persistently bare ground in an urban area actually is. The mechanism is not particular to Stoke. [Preston et al. (2023)](https://doi.org/10.1016/j.landurbplan.2022.104590), assessing brownfield across Greater Manchester, found that 51% of brownfield land is vegetated, and that the sites hardest to develop are among the most vegetated of all — a bare-soil detector is therefore selecting against precisely the land the register is most concerned with.
 
 The measurement was available from the outset. Notebook 04 recorded a mean BSI of 0.005 at register sites in May 2026, three paragraphs from the section setting the gate threshold at 0.1. The two numbers were never compared, and three subsequent notebooks proceeded on the assumption that the detector partially reached the register and could be improved.
 
@@ -115,7 +115,7 @@ two traps in reading it. `tests/test_app_data.py` and
 
 ## What would be required instead
 
-The literature indicates this is a known unsolved problem rather than an implementation failure. Xu & Ehlers (2022) abandoned image classification for rule-based data fusion across 63 German districts and still reported brownfield specifically as difficult. Sun et al. (2023) state that separating vacant from operational industrial land cannot be done from image features alone, and solve it by adding land surface temperature and population density as non-image filters.
+The literature indicates this is a known unsolved problem rather than an implementation failure. [Xu & Ehlers (2022)](https://doi.org/10.1016/j.compenvurbsys.2021.101729) abandoned image classification for rule-based data fusion across 63 German districts, reporting that automatic detection of vacant land as a class — of which brownfield is one of four categories in their typology — remains difficult even where commercial high-resolution imagery is used. [Sun et al. (2023)](https://doi.org/10.3390/ijgi12100409) find vacant industrial land difficult to distinguish from operational industrial land on image features alone, and resolve it by adding land surface temperature and population density as non-image filters.
 
 Three directions follow, none of which is a modification of this pipeline:
 
@@ -295,6 +295,16 @@ docker compose run pipeline python -m src.main --gss_code E06000021 --date 2026-
 - `requirements.txt` — runtime
 - `requirements-dev.txt` — pytest, pre-commit, Jupyter, scikit-learn
 - `requirements-ci.txt` — what CI installs
+
+---
+
+## References
+
+P. D. Preston, R. M. Dunk, G. R. Smith and G. Cavan, 'Not all brownfields are equal: A typological assessment reveals hidden green space in the city', *Landscape and Urban Planning*, 229 (2023), 104590, https://doi.org/10.1016/j.landurbplan.2022.104590 [accessed 5 August 2026].
+
+Y. Sun, H. Hu, Y. Han, Z. Wang and X. Zheng, 'Large-Scale Automatic Identification of Industrial Vacant Land', *ISPRS International Journal of Geo-Information*, 12:10 (2023), 409, https://doi.org/10.3390/ijgi12100409 [accessed 5 August 2026].
+
+S. Xu and M. Ehlers, 'Automatic detection of urban vacant land: An open-source approach for sustainable cities', *Computers, Environment and Urban Systems*, 91 (2022), 101729, https://doi.org/10.1016/j.compenvurbsys.2021.101729 [accessed 5 August 2026].
 
 ---
 
